@@ -9,6 +9,12 @@
     # _mac.h or _mac.cc are only compiled on MacOSX).
     'chromium_code': 1,
   },
+'conditions': [
+  ['use_qt==1', {
+    'includes': [
+      'visitedlink.gypi',
+    ],
+  }, {
   'includes': [
     'auto_login_parser.gypi',
     'autocomplete.gypi',
@@ -91,4 +97,6 @@
       ],
     }],
   ],
+  }],
+],
 }
