@@ -339,7 +339,7 @@
         }
       ],  # targets
     }],
-    ['use_x11==1 and chromeos==0', {
+    ['use_x11==1 and chromeos==0 and use_qt==0', {
       'targets': [
         {
           'target_name': 'xscrnsaver',
