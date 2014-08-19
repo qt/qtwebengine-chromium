@@ -83,7 +83,7 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext*) const
 
     // TestRunner specifically toggles the subpixel positioning flag.
     if (RuntimeEnabledFeatures::subpixelFontScalingEnabled()
-        && paint->getHinting() != SkPaint::kFull_Hinting
+        && paint->getHinting() < SkPaint::kNormal_Hinting
         && !isRunningLayoutTest())
         paint->setSubpixelText(true);
     else
