@@ -104,8 +104,12 @@ void WebSandboxSupportLinux::GetWebFontRenderStyleForStrike(
   if (size < 0 || size > std::numeric_limits<uint16_t>::max())
     return;
 
+  std::string familyStr;
+  if (family)
+      familyStr = std::string(family);
+
   font_service::mojom::FontRenderStylePtr font_render_style;
-  if (!font_loader_->FontRenderStyleForStrike(family, size, is_bold, is_italic,
+  if (!font_loader_->FontRenderStyleForStrike(familyStr, size, is_bold, is_italic,
                                               device_scale_factor,
                                               &font_render_style) ||
       font_render_style.is_null()) {

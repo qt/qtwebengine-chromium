@@ -40,7 +40,44 @@
 #include "third_party/skia/include/ports/SkTypeface_mac.h"
 #endif
 
+#include "ui/gfx/font_render_params.h"
+#include "ui/gfx/font.h"
+
 namespace blink {
+
+namespace {
+
+// These functions are also implemented in sandbox_ipc_linux.cc
+// Converts gfx::FontRenderParams::Hinting to WebFontRenderStyle::hintStyle.
+// Returns an int for serialization, but the underlying Blink type is a char.
+int ConvertHinting(gfx::FontRenderParams::Hinting hinting) {
+  switch (hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:   return 0;
+    case gfx::FontRenderParams::HINTING_SLIGHT: return 1;
+    case gfx::FontRenderParams::HINTING_MEDIUM: return 2;
+    case gfx::FontRenderParams::HINTING_FULL:   return 3;
+  }
+  NOTREACHED() << "Unexpected hinting value " << hinting;
+  return 0;
+}
+
+// Converts gfx::FontRenderParams::SubpixelRendering to
+// WebFontRenderStyle::useSubpixelRendering. Returns an int for serialization,
+// but the underlying Blink type is a char.
+int ConvertSubpixelRendering(
+  gfx::FontRenderParams::SubpixelRendering rendering) {
+  switch (rendering) {
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE: return 0;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB: return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR: return 1;
+  }
+  NOTREACHED() << "Unexpected subpixel rendering value " << rendering;
+  return 0;
+}
+
+} // namespace
 
 FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
     : text_size_(0),
@@ -292,9 +329,31 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
   WebFontRenderStyle result;
 
 #if !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
-  // If the font name is missing (i.e. probably a web font) or the sandbox is
-  // disabled, use the system defaults.
-  if (family.length() && Platform::Current()->GetSandboxSupport()) {
+  // If the the sandbox is disabled, we can query font parameters directly.
+  if (!Platform::Current()->GetSandboxSupport()) {
+    gfx::FontRenderParamsQuery query;
+    if (family.length())
+      query.families.push_back(family.data());
+    query.pixel_size = text_size;
+    switch (font_style.slant()) {
+    case SkFontStyle::kUpright_Slant:
+        query.style = gfx::Font::NORMAL;
+        break;
+    case SkFontStyle::kItalic_Slant:
+    case SkFontStyle::kOblique_Slant:
+        query.style = gfx::Font::ITALIC;
+        break;
+    }
+    query.weight = (gfx::Font::Weight)font_style.weight();
+    const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, nullptr);
+    result.use_bitmaps = params.use_bitmaps;
+    result.use_auto_hint = params.autohinter;
+    result.use_hinting = params.hinting != gfx::FontRenderParams::HINTING_NONE;
+    result.hint_style = ConvertHinting(params.hinting);
+    result.use_anti_alias = params.antialiasing;
+    result.use_subpixel_rendering = ConvertSubpixelRendering(params.subpixel_rendering);
+    result.use_subpixel_positioning = params.subpixel_positioning;
+  } else {
     bool is_bold = font_style.weight() >= SkFontStyle::kSemiBold_Weight;
     bool is_italic = font_style.slant() != SkFontStyle::kUpright_Slant;
     Platform::Current()->GetSandboxSupport()->GetWebFontRenderStyleForStrike(
