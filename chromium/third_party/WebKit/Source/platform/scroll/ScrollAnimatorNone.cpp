@@ -379,6 +379,7 @@ ScrollAnimatorNone::~ScrollAnimatorNone()
 
 ScrollAnimatorNone::Parameters ScrollAnimatorNone::parametersForScrollGranularity(ScrollGranularity granularity) const
 {
+#if !defined(TOOLKIT_QT)
     switch (granularity) {
     case ScrollByDocument:
         return Parameters(true, 20 * kTickTime, 10 * kTickTime, Cubic, 10 * kTickTime, Cubic, 10 * kTickTime, Linear, 1);
@@ -391,6 +392,23 @@ ScrollAnimatorNone::Parameters ScrollAnimatorNone::parametersForScrollGranularit
     default:
         ASSERT_NOT_REACHED();
     }
+#else
+    // This is a slightly different strategy for the animation with a steep attack curve and natural release curve.
+    // The fast acceleration makes the animation look more responsive to user input. The natural release curve makes
+    // the animation compatible with that of free-spinning mouse-wheel or emulated scroll on release by touchpads.
+    switch (granularity) {
+    case ScrollByDocument:
+        return Parameters(true, 20 * kTickTime, 10 * kTickTime, Cubic, 6 * kTickTime, Quadratic, 10 * kTickTime, Quadratic, 30 * kTickTime);
+    case ScrollByLine:
+        return Parameters(true, 6 * kTickTime, 5 * kTickTime, Cubic, 1 * kTickTime, Quadratic, 4 * kTickTime, Linear, 12 * kTickTime);
+    case ScrollByPage:
+        return Parameters(true, 12 * kTickTime, 10 * kTickTime, Cubic, 3 * kTickTime, Quadratic, 6 * kTickTime, Linear, 24 * kTickTime);
+    case ScrollByPixel:
+        return Parameters(true, 8 * kTickTime, 3 * kTickTime, Cubic, 2 * kTickTime, Quadratic, 5 * kTickTime, Quadratic, 16 * kTickTime);
+    default:
+        ASSERT_NOT_REACHED();
+    }
+#endif
     return Parameters();
 }
 
