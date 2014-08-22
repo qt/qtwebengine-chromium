@@ -39,7 +39,42 @@
 #include "public/platform/linux/WebFontRenderStyle.h"
 #include "public/platform/linux/WebSandboxSupport.h"
 
+#include "ui/gfx/font_render_params.h"
+#include "ui/gfx/font.h"
+
 namespace blink {
+
+namespace {
+// These functions are also implemented in sandbox_ipc_linux.cc
+// Converts gfx::FontRenderParams::Hinting to WebFontRenderStyle::hintStyle.
+// Returns an int for serialization, but the underlying Blink type is a char.
+int ConvertHinting(gfx::FontRenderParams::Hinting hinting) {
+  switch (hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:   return 0;
+    case gfx::FontRenderParams::HINTING_SLIGHT: return 1;
+    case gfx::FontRenderParams::HINTING_MEDIUM: return 2;
+    case gfx::FontRenderParams::HINTING_FULL:   return 3;
+  }
+  NOTREACHED() << "Unexpected hinting value " << hinting;
+  return 0;
+}
+
+// Converts gfx::FontRenderParams::SubpixelRendering to
+// WebFontRenderStyle::useSubpixelRendering. Returns an int for serialization,
+// but the underlying Blink type is a char.
+int ConvertSubpixelRendering(
+    gfx::FontRenderParams::SubpixelRendering rendering) {
+  switch (rendering) {
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE: return 0;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB: return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR: return 1;
+  }
+  NOTREACHED() << "Unexpected subpixel rendering value " << rendering;
+  return 0;
+}
+}
 
 static SkPaint::Hinting skiaHinting = SkPaint::kNormal_Hinting;
 static bool useSkiaAutoHint = true;
@@ -105,7 +140,18 @@ void FontPlatformData::querySystemForRenderStyle(bool useSkiaSubpixelPositioning
 #else
     // If the font name is missing (i.e. probably a web font) or the sandbox is disabled, use the system defaults.
     if (!m_family.length() || !Platform::current()->sandboxSupport()) {
-        style.setDefaults();
+        const int sizeAndStyle = (((int)m_textSize) << 2) | (m_typeface->style() & 3);
+        gfx::FontRenderParamsQuery query;
+        query.pixel_size = m_textSize;
+        query.style = gfx::Font::NORMAL | (sizeAndStyle & 1 ? gfx::Font::BOLD : 0) | (sizeAndStyle & 2 ? gfx::Font::ITALIC : 0);
+        const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, NULL);
+        style.useBitmaps = params.use_bitmaps;
+        style.useAutoHint = params.autohinter;
+        style.useHinting = params.hinting != gfx::FontRenderParams::HINTING_NONE;
+        style.hintStyle = ConvertHinting(params.hinting);
+        style.useAntiAlias = params.antialiasing;
+        style.useSubpixelRendering = ConvertSubpixelRendering(params.subpixel_rendering);
+        style.useSubpixelPositioning = params.subpixel_positioning;
     } else {
         const int sizeAndStyle = (((int)m_textSize) << 2) | (m_typeface->style() & 3);
         Platform::current()->sandboxSupport()->getRenderStyleForStrike(m_family.data(), sizeAndStyle, &style);
