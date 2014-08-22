@@ -106,8 +106,8 @@ void FontRenderStyle::applyToPaint(SkPaint& paint, float deviceScaleFactor) cons
     if (useAntiAlias)
         paint.setLCDRenderText(useSubpixelRendering);
 
-    // Do not enable subpixel text on low-dpi if full hinting is requested.
-    bool useSubpixelText = (paint.getHinting() != SkPaint::kFull_Hinting || deviceScaleFactor > 1.0f);
+    // Do not enable subpixel text on low-dpi if normal or full hinting is requested.
+    bool useSubpixelText = (paint.getHinting() < SkPaint::kNormal_Hinting || deviceScaleFactor > 1.0f);
 
     // TestRunner specifically toggles the subpixel positioning flag.
     if (useSubpixelText && !LayoutTestSupport::isRunningLayoutTest())
