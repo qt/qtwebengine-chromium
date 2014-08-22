@@ -10,9 +10,42 @@
 #include "public/platform/linux/WebFontRenderStyle.h"
 #include "public/platform/linux/WebSandboxSupport.h"
 
+#include "ui/gfx/font_render_params.h"
+#include "ui/gfx/font.h"
+
 namespace blink {
 
 namespace {
+
+// These functions are also implemented in sandbox_ipc_linux.cc
+// Converts gfx::FontRenderParams::Hinting to WebFontRenderStyle::hintStyle.
+// Returns an int for serialization, but the underlying Blink type is a char.
+int ConvertHinting(gfx::FontRenderParams::Hinting hinting) {
+  switch (hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:   return 0;
+    case gfx::FontRenderParams::HINTING_SLIGHT: return 1;
+    case gfx::FontRenderParams::HINTING_MEDIUM: return 2;
+    case gfx::FontRenderParams::HINTING_FULL:   return 3;
+  }
+  NOTREACHED() << "Unexpected hinting value " << hinting;
+  return 0;
+}
+
+// Converts gfx::FontRenderParams::SubpixelRendering to
+// WebFontRenderStyle::useSubpixelRendering. Returns an int for serialization,
+// but the underlying Blink type is a char.
+int ConvertSubpixelRendering(
+    gfx::FontRenderParams::SubpixelRendering rendering) {
+  switch (rendering) {
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE: return 0;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB: return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR: return 1;
+  }
+  NOTREACHED() << "Unexpected subpixel rendering value " << rendering;
+  return 0;
+}
 
 SkPaint::Hinting skiaHinting = SkPaint::kNormal_Hinting;
 bool useSkiaAutoHint = true;
@@ -55,10 +88,22 @@ FontRenderStyle FontRenderStyle::querySystem(const CString& family,
 #if OS(ANDROID)
   style.setDefaults();
 #else
-  // If the font name is missing (i.e. probably a web font) or the sandbox is
-  // disabled, use the system defaults.
-  if (!family.length() || !Platform::current()->sandboxSupport()) {
-    style.setDefaults();
+  // If the the sandbox is disabled, we can query font parameters directly.
+  if (!Platform::current()->sandboxSupport()) {
+    gfx::FontRenderParamsQuery query;
+    if (family.length())
+      query.families.push_back(family.data());
+    query.pixel_size = textSize;
+    query.style = (typefaceStyle & 2) ? gfx::Font::ITALIC : gfx::Font::NORMAL;
+    query.weight = (typefaceStyle & 1) ? gfx::Font::Weight::BOLD : gfx::Font::Weight::NORMAL;
+    const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, NULL);
+    style.useBitmaps = params.use_bitmaps;
+    style.useAutoHint = params.autohinter;
+    style.useHinting = params.hinting != gfx::FontRenderParams::HINTING_NONE;
+    style.hintStyle = ConvertHinting(params.hinting);
+    style.useAntiAlias = params.antialiasing;
+    style.useSubpixelRendering = ConvertSubpixelRendering(params.subpixel_rendering);
+    style.useSubpixelPositioning = params.subpixel_positioning;
   } else {
     const int sizeAndStyle = (((int)textSize) << 2) | (typefaceStyle & 3);
     Platform::current()->sandboxSupport()->getWebFontRenderStyleForStrike(
