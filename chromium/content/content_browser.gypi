@@ -1930,6 +1930,11 @@
         'browser/geolocation/wifi_data_provider_linux.cc',
       ],
     }],
+    ['use_udev==1', {
+        'dependencies': [
+          '../device/udev_linux/udev.gyp:udev_linux',
+        ],
+    }],
     ['enable_browser_cdms==1', {
       'sources': [
         'browser/media/cdm/browser_cdm_manager.cc',

@@ -6,8 +6,6 @@
 
 #include "content/browser/device_monitor_udev.h"
 
-#include <libudev.h>
-
 #include <string>
 
 #include "base/system_monitor/system_monitor.h"
@@ -72,7 +70,7 @@ void DeviceMonitorLinux::OnDevicesChanged(udev_device* device) {
 
   base::SystemMonitor::DeviceType device_type =
       base::SystemMonitor::DEVTYPE_UNKNOWN;
-  std::string subsystem(udev_device_get_subsystem(device));
+  std::string subsystem(libudev.udev_device_get_subsystem(device));
   for (size_t i = 0; i < arraysize(kSubsystemMap); ++i) {
     if (subsystem == kSubsystemMap[i].subsystem) {
       device_type = kSubsystemMap[i].device_type;
