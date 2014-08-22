@@ -109,9 +109,9 @@ void FontRenderStyle::ApplyToPaintFont(PaintFont& font,
   if (use_anti_alias)
     font.SetLcdRenderText(use_subpixel_rendering);
 
-  // Do not enable subpixel text on low-dpi if full hinting is requested.
+  // Do not enable subpixel text on low-dpi if normal or full hinting is requested.
   bool use_subpixel_text =
-      (sk_hint_style != SkPaint::kFull_Hinting || device_scale_factor > 1.0f);
+      (sk_hint_style < SkPaint::kNormal_Hinting || device_scale_factor > 1.0f);
 
   // TestRunner specifically toggles the subpixel positioning flag.
   if (use_subpixel_text && !LayoutTestSupport::IsRunningLayoutTest())
