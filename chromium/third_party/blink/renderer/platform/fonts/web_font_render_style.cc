@@ -107,11 +107,11 @@ void WebFontRenderStyle::ApplyToPaintFont(PaintFont& font,
   if (use_anti_alias)
     font.SetLcdRenderText(use_subpixel_rendering);
 
-  // Force-enable subpixel positioning, except when full hinting is requested on
-  // low-dpi screen or when running layout tests.
+  // Force-enable subpixel positioning, except when normal or full hinting is
+  // requested on low-dpi screen or when running layout tests.
   bool force_subpixel_positioning =
       !LayoutTestSupport::IsRunningLayoutTest() &&
-      (sk_hint_style != SkPaint::kFull_Hinting || device_scale_factor > 1.0f);
+      (sk_hint_style < SkPaint::kNormal_Hinting || device_scale_factor > 1.0f);
 
   font.SetSubpixelText(force_subpixel_positioning || use_subpixel_positioning);
 }
