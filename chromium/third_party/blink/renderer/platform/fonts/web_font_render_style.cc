@@ -111,10 +111,10 @@ void WebFontRenderStyle::ApplyToSkFont(
     font->setEdging(SkFont::Edging::kAlias);
   }
 
-  // Force-enable subpixel positioning, except when full hinting is requested on
-  // low-dpi screen or when running web tests.
+  // Force-enable subpixel positioning, except when normal or full hinting is
+  // requested on low-dpi screen or when running web tests.
   bool force_subpixel_positioning = !WebTestSupport::IsRunningWebTest() &&
-                                    (sk_hint_style != SkFontHinting::kFull ||
+                                    (sk_hint_style < SkFontHinting::kNormal ||
                                      should_use_subpixel_positioning);
 
   font->setSubpixel(force_subpixel_positioning || use_subpixel_positioning);
