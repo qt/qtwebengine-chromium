@@ -316,7 +316,8 @@ void SandboxIPCHandler::HandleGetStyleForStrike(
   }
 
   gfx::FontRenderParamsQuery query;
-  query.families.push_back(family);
+  if (!family.empty())
+    query.families.push_back(family);
   query.pixel_size = pixel_size;
   query.style = italic ? gfx::Font::ITALIC : 0;
   query.weight = bold ? gfx::Font::Weight::BOLD : gfx::Font::Weight::NORMAL;
