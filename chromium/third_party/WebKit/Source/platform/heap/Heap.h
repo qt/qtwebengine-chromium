@@ -1284,7 +1284,11 @@ private:
 // ignore a particular class or field when checking for proper usage. When using
 // GC_PLUGIN_IGNORE a bug-number should be provided as an argument where the
 // bug describes what needs to happen to remove the GC_PLUGIN_IGNORE again.
-#if COMPILER(CLANG)
+
+// Annotations are not working in XCode <= 5.0. Therfore we have to
+// disable annotations until we do not need to support such an XCode
+// version anymore. - We are never running the GC plugin anyway.
+#if COMPILER(CLANG) && !defined(TOOLKIT_QT)
 #define STACK_ALLOCATED()                                       \
     private:                                                    \
         __attribute__((annotate("blink_stack_allocated")))      \
