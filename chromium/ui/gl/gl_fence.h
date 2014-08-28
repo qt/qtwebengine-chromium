@@ -8,7 +8,33 @@
 #include "base/basictypes.h"
 #include "ui/gl/gl_export.h"
 
+typedef void *EGLDisplay;
+typedef void *EGLSyncKHR;
+typedef struct __GLsync *GLsync;
+
 namespace gfx {
+
+union TransferableFence {
+    enum SyncType {
+        NoSync,
+        EglSync,
+        ArbSync
+    };
+    SyncType type;
+    struct {
+        SyncType type;
+        EGLDisplay display;
+        EGLSyncKHR sync;
+    } egl;
+    struct {
+        SyncType type;
+        GLsync sync;
+    } arb;
+
+    TransferableFence() : type(NoSync) { }
+    operator bool() { return type != NoSync; }
+    void reset() { type = NoSync; }
+};
 
 class GL_EXPORT GLFence {
  public:
@@ -22,6 +48,8 @@ class GL_EXPORT GLFence {
   // having explicitly called glFlush() or glFinish() in the originating
   // context.
   static GLFence* CreateWithoutFlush();
+
+  virtual TransferableFence Transfer() = 0;
 
   virtual bool HasCompleted() = 0;
   virtual void ClientWait() = 0;

@@ -33,6 +33,10 @@ class GLFenceNVFence: public gfx::GLFence {
     }
   }
 
+  virtual gfx::TransferableFence Transfer() OVERRIDE {
+    return gfx::TransferableFence();
+  }
+
   virtual bool HasCompleted() OVERRIDE {
     return !!glTestFenceNV(fence_);
   }
@@ -69,6 +73,16 @@ class GLFenceARBSync: public gfx::GLFence {
     }
   }
 
+  virtual gfx::TransferableFence Transfer() OVERRIDE {
+    gfx::TransferableFence ret;
+    if (sync_) {
+      ret.type = gfx::TransferableFence::ArbSync;
+      ret.arb.sync = sync_;
+      sync_ = 0;
+    }
+    return ret;
+  }
+
   virtual bool HasCompleted() OVERRIDE {
     // Handle the case where FenceSync failed.
     if (!sync_)
@@ -98,7 +112,8 @@ class GLFenceARBSync: public gfx::GLFence {
 
  private:
   virtual ~GLFenceARBSync() {
-    glDeleteSync(sync_);
+    if (sync_)
+      glDeleteSync(sync_);
   }
 
   GLsync sync_;
@@ -116,6 +131,15 @@ class EGLFenceSync : public gfx::GLFence {
     } else {
       flush_event_ = gfx::GLContext::GetCurrent()->SignalFlush();
     }
+  }
+
+  virtual gfx::TransferableFence Transfer() OVERRIDE {
+    gfx::TransferableFence ret;
+    ret.type = gfx::TransferableFence::EglSync;
+    ret.egl.display = display_;
+    ret.egl.sync = sync_;
+    sync_ = 0;
+    return ret;
   }
 
   virtual bool HasCompleted() OVERRIDE {

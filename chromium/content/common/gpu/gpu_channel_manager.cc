@@ -56,6 +56,7 @@ GpuChannelManager::~GpuChannelManager() {
     default_offscreen_surface_ = NULL;
   }
   DCHECK(image_operations_.empty());
+  DCHECK(sync_point_gl_fences_.empty());
 }
 
 gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
