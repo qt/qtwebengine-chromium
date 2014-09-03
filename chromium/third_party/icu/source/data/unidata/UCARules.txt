@@ -1,4 +1,4 @@
-﻿# File:        UCA_Rules_SHORT.txt
+# File:        UCA_Rules_SHORT.txt
 # UCA Version: 6.0.0
 # UCD Version: 6.0.0
 # Generated:   2010-10-17, 20:16:11 GMT [MD]

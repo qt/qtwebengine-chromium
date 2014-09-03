@@ -1,4 +1,4 @@
-﻿	Copyright (c) 2006 International Business Machines Corporation,
+	Copyright (c) 2006 International Business Machines Corporation,
 	Apple Computer, Inc., and others. All Rights Reserved.
 กก
 กกขนาก

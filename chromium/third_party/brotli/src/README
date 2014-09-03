@@ -1,4 +1,4 @@
-﻿This is a README for the font compression reference code. There are several
+This is a README for the font compression reference code. There are several
 compression related modules in this repository.
 
 brotli/ contains reference code for the Brotli byte-level compression
