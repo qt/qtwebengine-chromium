@@ -40,7 +40,7 @@ import sys
 
 from code_generator_v8 import CodeGeneratorDictionaryImpl, CodeGeneratorV8, CodeGeneratorUnionType
 from idl_reader import IdlReader
-from utilities import read_idl_files_list_from_file, write_file, idl_filename_to_component
+from utilities import read_idl_files_list_from_file, write_file, idl_filename_to_component, abs
 
 
 def parse_options():
@@ -148,9 +148,9 @@ class IdlCompilerDictionaryImpl(IdlCompiler):
 
 def generate_bindings(options, input_filename):
     idl_compiler = IdlCompilerV8(
-        options.output_directory,
-        cache_directory=options.cache_directory,
-        interfaces_info_filename=options.interfaces_info_file,
+        abs(options.output_directory),
+        cache_directory=abs(options.cache_directory),
+        interfaces_info_filename=abs(options.interfaces_info_file),
         only_if_changed=options.write_file_only_if_changed,
         target_component=options.target_component)
     idl_compiler.compile_file(input_filename)

@@ -53,13 +53,20 @@ def is_valid_component_dependency(component, dependency):
 # Basic file reading/writing
 ################################################################################
 
+def abs(filename):
+    # open, abspath, etc. are all limited to the 260 char MAX_PATH and this causes
+    # problems when we try to resolve long relative paths in the WebKit directory structure.
+    return os.path.normpath(os.path.join(os.getcwd(), filename))
+
 def get_file_contents(filename):
+    filename = abs(filename)
     with open(filename) as f:
         return f.read()
 
 
 def read_file_to_list(filename):
     """Returns a list of (stripped) lines for a given filename."""
+    filename = abs(filename)
     with open(filename) as f:
         return [line.rstrip('\n') for line in f]
 
@@ -94,11 +101,13 @@ def read_idl_files_list_from_file(filename):
 
 def read_pickle_files(pickle_filenames):
     for pickle_filename in pickle_filenames:
+        pickle_filename = abs(pickle_filename)
         with open(pickle_filename) as pickle_file:
             yield pickle.load(pickle_file)
 
 
 def write_file(new_text, destination_filename, only_if_changed):
+    destination_filename = abs(destination_filename)
     if only_if_changed and os.path.isfile(destination_filename):
         with open(destination_filename) as destination_file:
             if destination_file.read() == new_text:
@@ -111,6 +120,7 @@ def write_file(new_text, destination_filename, only_if_changed):
 
 
 def write_pickle_file(pickle_filename, data, only_if_changed):
+    pickle_filename = abs(pickle_filename)
     if only_if_changed and os.path.isfile(pickle_filename):
         with open(pickle_filename) as pickle_file:
             try:
