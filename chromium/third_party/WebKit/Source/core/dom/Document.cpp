@@ -576,10 +576,8 @@ Document::~Document()
     if (m_styleSheetList)
         m_styleSheetList->detachFromDocument();
 
-    if (m_importsController) {
-        m_importsController->wasDetachedFrom(*this);
-        m_importsController = nullptr;
-    }
+    if (m_importsController)
+        HTMLImportsController::removeFrom(*this);
 
     m_timeline->detachFromDocument();
 
@@ -633,10 +631,8 @@ void Document::dispose()
 
     m_registrationContext.clear();
 
-    if (m_importsController) {
-        m_importsController->wasDetachedFrom(*this);
-        m_importsController = nullptr;
-    }
+    if (m_importsController)
+        HTMLImportsController::removeFrom(*this);
 
     // removeDetachedChildren() doesn't always unregister IDs,
     // so tear down scope information upfront to avoid having stale references in the map.
@@ -1810,6 +1806,9 @@ void Document::inheritHtmlAndBodyElementStyles(StyleRecalcChange change)
 void Document::updateRenderTree(StyleRecalcChange change)
 {
     ASSERT(isMainThread());
+
+    if (!view() || !isActive())
+        return;
 
     if (change != Force && !needsRenderTreeUpdate())
         return;
@@ -3455,7 +3454,10 @@ void Document::styleResolverChanged(StyleResolverUpdateMode updateMode)
         // We need to manually repaint because we avoid doing all repaints in layout or style
         // recalc while sheets are still loading to avoid FOUC.
         m_pendingSheetLayout = IgnoreLayoutWithPendingSheets;
-        renderView()->repaintViewAndCompositedLayers();
+
+        ASSERT(renderView() || importsController());
+        if (renderView())
+            renderView()->repaintViewAndCompositedLayers();
     }
 }
 

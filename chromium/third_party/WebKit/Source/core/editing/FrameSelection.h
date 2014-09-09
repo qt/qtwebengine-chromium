@@ -261,6 +261,8 @@ private:
     void startObservingVisibleSelectionChange();
     void stopObservingVisibleSelectionChangeIfNecessary();
 
+    VisibleSelection validateSelection(const VisibleSelection&);
+
     LocalFrame* m_frame;
 
     LayoutUnit m_xPosForVerticalArrowNavigation;

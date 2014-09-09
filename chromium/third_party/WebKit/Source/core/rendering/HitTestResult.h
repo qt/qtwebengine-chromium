@@ -103,6 +103,9 @@ public:
     Image* image() const;
     IntRect imageRect() const;
     KURL absoluteImageURL() const;
+    // This variant of absoluteImageURL will also convert <canvas> elements
+    // to huge image data URLs (very expensive).
+    KURL absoluteImageURLIncludingCanvasDataURL() const;
     KURL absoluteMediaURL() const;
     KURL absoluteLinkURL() const;
     String textContent() const;
@@ -125,6 +128,7 @@ public:
     Node* targetNode() const;
 
 private:
+    KURL absoluteImageURLInternal(bool allowCanvas) const;
     NodeSet& mutableRectBasedTestResult(); // See above.
     HTMLMediaElement* mediaElement() const;
 

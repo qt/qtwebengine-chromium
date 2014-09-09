@@ -661,6 +661,11 @@ void WebSettingsImpl::setGestureTapHighlightEnabled(bool enableHighlight)
     m_gestureTapHighlightEnabled = enableHighlight;
 }
 
+void WebSettingsImpl::setForceZeroLayoutHeight(bool enabled)
+{
+    m_settings->setForceZeroLayoutHeight(enabled);
+}
+
 void WebSettingsImpl::setAllowCustomScrollbarInMainFrame(bool enabled)
 {
     m_settings->setAllowCustomScrollbarInMainFrame(enabled);

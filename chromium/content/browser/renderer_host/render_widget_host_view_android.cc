@@ -40,6 +40,7 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_android.h"
+#include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -187,6 +188,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
           switches::kDisableOverscrollEdgeEffect)),
       overscroll_effect_(OverscrollGlow::Create(overscroll_effect_enabled_)),
       gesture_provider_(CreateGestureProviderConfig(), this),
+      gesture_text_selector_(this),
       flush_input_requested_(false),
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
@@ -544,13 +546,11 @@ void RenderWidgetHostViewAndroid::OnStartContentIntent(
 }
 
 void RenderWidgetHostViewAndroid::OnSmartClipDataExtracted(
-    const base::string16& result) {
-  // Custom serialization over IPC isn't allowed normally for security reasons.
-  // Since this feature is only used in (single-process) WebView, there are no
-  // security issues. Enforce that it's only called in single process mode.
-  CHECK(RenderProcessHost::run_renderer_in_process());
+    const base::string16& text,
+    const base::string16& html,
+    const gfx::Rect rect) {
   if (content_view_core_)
-    content_view_core_->OnSmartClipDataExtracted(result);
+    content_view_core_->OnSmartClipDataExtracted(text, html, rect);
 }
 
 bool RenderWidgetHostViewAndroid::OnTouchEvent(
@@ -560,6 +560,11 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
 
   if (!gesture_provider_.OnTouchEvent(event))
     return false;
+
+  if (gesture_text_selector_.OnTouchEvent(event)) {
+    gesture_provider_.OnTouchEventAck(false);
+    return true;
+  }
 
   // Short-circuit touch forwarding if no touch handlers exist.
   if (!host_->ShouldForwardTouchEvent()) {
@@ -1290,6 +1295,9 @@ void RenderWidgetHostViewAndroid::RunAckCallbacks() {
 
 void RenderWidgetHostViewAndroid::OnGestureEvent(
     const ui::GestureEventData& gesture) {
+  if (gesture_text_selector_.OnGestureEvent(gesture))
+    return;
+
   SendGestureEvent(CreateWebGestureEventFromGestureEventData(gesture));
 }
 
@@ -1435,6 +1443,31 @@ SkBitmap::Config RenderWidgetHostViewAndroid::PreferredReadbackFormat() {
       return SkBitmap::kRGB_565_Config;
   }
   return SkBitmap::kARGB_8888_Config;
+}
+
+void RenderWidgetHostViewAndroid::ShowSelectionHandlesAutomatically() {
+  if (content_view_core_)
+    content_view_core_->ShowSelectionHandlesAutomatically();
+}
+
+void RenderWidgetHostViewAndroid::SelectRange(
+    float x1, float y1, float x2, float y2) {
+  if (content_view_core_)
+    static_cast<WebContentsImpl*>(content_view_core_->GetWebContents())->
+        SelectRange(gfx::Point(x1, y1), gfx::Point(x2, y2));
+}
+
+void RenderWidgetHostViewAndroid::Unselect() {
+  if (content_view_core_)
+    content_view_core_->GetWebContents()->Unselect();
+}
+
+void RenderWidgetHostViewAndroid::LongPress(
+    base::TimeTicks time, float x, float y) {
+  blink::WebGestureEvent long_press = WebGestureEventBuilder::Build(
+      blink::WebInputEvent::GestureLongPress,
+      (time - base::TimeTicks()).InSecondsF(), x, y);
+  SendGestureEvent(long_press);
 }
 
 // static

@@ -40,8 +40,10 @@
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/HTMLInterchange.h"
 #include "core/editing/InputMethodController.h"
 #include "core/editing/TextIterator.h"
+#include "core/editing/markup.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/WheelEvent.h"
 #include "core/frame/EventHandlerRegistry.h"
@@ -3030,6 +3032,9 @@ void WebViewImpl::updateMainFrameLayoutSize()
         }
     }
 
+    if (page()->settings().forceZeroLayoutHeight())
+        layoutSize.height = 0;
+
     view->setLayoutSize(layoutSize);
 }
 
@@ -3179,7 +3184,7 @@ void WebViewImpl::copyImageAt(const WebPoint& point)
 
     HitTestResult result = hitTestResultForWindowPos(point);
 
-    if (result.absoluteImageURL().isEmpty()) {
+    if (result.absoluteImageURLIncludingCanvasDataURL().isEmpty()) {
         // There isn't actually an image at these coordinates.  Might be because
         // the window scrolled while the context menu was open or because the page
         // changed itself between when we thought there was an image here and when
@@ -3198,7 +3203,7 @@ void WebViewImpl::saveImageAt(const WebPoint& point)
     if (!m_page)
         return;
 
-    KURL url = hitTestResultForWindowPos(point).absoluteImageURL();
+    KURL url = hitTestResultForWindowPos(point).absoluteImageURLIncludingCanvasDataURL();
 
     if (url.isEmpty())
         return;
@@ -3495,12 +3500,48 @@ void WebViewImpl::showContextMenu()
     m_contextMenuAllowed = false;
 }
 
+// FIXME: This should be removed when the chromium side patch lands
+// http://codereview.chromium.org/260623004
 WebString WebViewImpl::getSmartClipData(WebRect rect)
+{
+    return WebString();
+}
+
+void WebViewImpl::getSmartClipData(WebRect rect, WebString& clipText, WebRect& clipRect)
 {
     LocalFrame* frame = toLocalFrame(focusedWebCoreFrame());
     if (!frame)
-        return WebString();
-    return WebCore::SmartClip(frame).dataForRect(rect).toString();
+        return;
+    SmartClipData clipData = WebCore::SmartClip(frame).dataForRect(rect);
+    clipText = clipData.clipData();
+    clipRect = clipData.rect();
+}
+
+void WebViewImpl::extractSmartClipData(WebRect rect, WebString& clipText, WebString& clipHtml, WebRect& clipRect)
+{
+    LocalFrame* localFrame = toLocalFrame(focusedWebCoreFrame());
+    if (!localFrame)
+        return;
+    SmartClipData clipData = WebCore::SmartClip(localFrame).dataForRect(rect);
+    clipText = clipData.clipData();
+    clipRect = clipData.rect();
+
+    WebLocalFrameImpl* frame = mainFrameImpl();
+    if (!frame)
+        return;
+    WebPoint startPoint(rect.x, rect.y);
+    WebPoint endPoint(rect.x + rect.width, rect.y + rect.height);
+    VisiblePosition startVisiblePosition = frame->visiblePositionForWindowPoint(startPoint);
+    VisiblePosition endVisiblePosition = frame->visiblePositionForWindowPoint(endPoint);
+
+    Position startPosition = startVisiblePosition.deepEquivalent();
+    Position endPosition = endVisiblePosition.deepEquivalent();
+
+    RefPtr<Range> range = Range::create(*startPosition.document(), startPosition, endPosition);
+    if (!range)
+        return;
+
+    clipHtml = createMarkup(range.get(), 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
 }
 
 void WebViewImpl::hidePopups()

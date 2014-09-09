@@ -617,7 +617,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 
 // Sent to inform the renderer to invoke a context menu.
 // The parameter specifies the location in the render view's coordinates.
-IPC_MESSAGE_ROUTED1(ViewMsg_ShowContextMenu,
+IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
+                    ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_Stop)
@@ -1660,11 +1661,10 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
 // Reply to the ViewMsg_ExtractSmartClipData message.
-// TODO(juhui24.lee@samsung.com): this should be changed to a vector of structs
-// instead of encoding the data as a string which is not allowed normally. Since
-// ths is only used in Android WebView, it's allowed temporarily.
-// http://crbug.com/330872
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SmartClipDataExtracted, base::string16)
+IPC_MESSAGE_ROUTED3(ViewHostMsg_SmartClipDataExtracted,
+                    base::string16 /* text */,
+                    base::string16 /* html */,
+                    gfx::Rect /* rect */)
 
 #elif defined(OS_MACOSX)
 // Request that the browser load a font into shared memory for us.

@@ -50,7 +50,8 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
                     MediaPlayerManager* manager,
                     const RequestMediaResourcesCB& request_media_resources_cb,
                     const ReleaseMediaResourcesCB& release_media_resources_cb,
-                    const GURL& frame_url);
+                    const GURL& frame_url,
+                    bool allow_credentials);
   virtual ~MediaPlayerBridge();
 
   // Initialize this object and extract the metadata from the media.
@@ -132,6 +133,11 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   void OnMediaMetadataExtracted(base::TimeDelta duration, int width, int height,
                                 bool success);
 
+  // Returns true if a MediaUrlInterceptor registered by the embedder has
+  // intercepted the url.
+  bool InterceptMediaUrl(
+      const std::string& url, int* fd, int64* offset, int64* size);
+
   // Whether the player is prepared for playback.
   bool prepared_;
 
@@ -179,6 +185,9 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   // Volume of playback.
   double volume_;
+
+  // Whether user credentials are allowed to be passed.
+  bool allow_credentials_;
 
   // Weak pointer passed to |listener_| for callbacks.
   // NOTE: Weak pointers must be invalidated before all other member variables.

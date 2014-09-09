@@ -165,7 +165,8 @@ public:
 
     virtual void trace(Visitor*) OVERRIDE;
 
-    void notifyNodeInserted(Node&);
+    enum ChildrenChangeSource { ChildrenChangeSourceAPI, ChildrenChangeSourceParser };
+    void notifyNodeInserted(Node&, ChildrenChangeSource = ChildrenChangeSourceAPI);
     void notifyNodeRemoved(Node&);
 
 protected:

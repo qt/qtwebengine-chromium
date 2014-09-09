@@ -114,7 +114,10 @@ class ContentViewCoreImpl : public ContentViewCore,
                         jfloat touch_major_0,
                         jfloat touch_major_1,
                         jfloat raw_pos_x,
-                        jfloat raw_pos_y);
+                        jfloat raw_pos_y,
+                        jint android_tool_type_0,
+                        jint android_tool_type_1,
+                        jint android_button_state);
   jboolean SendMouseMoveEvent(JNIEnv* env,
                               jobject obj,
                               jlong time_ms,
@@ -235,7 +238,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Public methods that call to Java via JNI
   // --------------------------------------------------------------------------
 
-  void OnSmartClipDataExtracted(const base::string16& result);
+  void OnSmartClipDataExtracted(const base::string16& text,
+                                const base::string16& html,
+                                const gfx::Rect& clip_rect);
 
   // Creates a popup menu with |items|.
   // |multiple| defines if it should support multi-select.
@@ -301,6 +306,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   gfx::Size GetViewSize() const;
 
   void SetAccessibilityEnabledInternal(bool enabled);
+
+  void ShowSelectionHandlesAutomatically() const;
 
   // --------------------------------------------------------------------------
   // Methods called from native code

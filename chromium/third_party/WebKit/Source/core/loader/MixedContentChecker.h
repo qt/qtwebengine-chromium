@@ -49,10 +49,6 @@ public:
     {
         return canDisplayInsecureContentInternal(securityOrigin, url, MixedContentChecker::Display);
     }
-    bool canSubmitToInsecureForm(SecurityOrigin* securityOrigin, const KURL& url) const
-    {
-        return canDisplayInsecureContentInternal(securityOrigin, url, MixedContentChecker::Submission);
-    }
 
     bool canRunInsecureContent(SecurityOrigin* securityOrigin, const KURL& url) const
     {
@@ -62,6 +58,8 @@ public:
     {
         return canRunInsecureContentInternal(securityOrigin, url, MixedContentChecker::WebSocket);
     }
+
+    bool canSubmitToInsecureForm(SecurityOrigin*, const KURL&) const;
     static bool isMixedContent(SecurityOrigin*, const KURL&);
 
 private:

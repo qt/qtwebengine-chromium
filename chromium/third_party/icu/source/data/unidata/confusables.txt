@@ -1,4 +1,4 @@
-# Recommended confusable mapping for IDN
+﻿# Recommended confusable mapping for IDN
 # File: confusables.txt
 # Version: 2.1
 # Generated: 2010-04-13, 01:33:26 GMT

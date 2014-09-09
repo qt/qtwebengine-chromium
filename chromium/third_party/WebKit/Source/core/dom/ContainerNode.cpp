@@ -294,6 +294,8 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
     if (nextChild.previousSibling() == newChild || &nextChild == newChild) // nothing to do
         return;
 
+    RefPtrWillBeRawPtr<Node> protect(this);
+
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
 
@@ -303,9 +305,7 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
 
     ChildListMutationScope(*this).childAdded(*newChild);
 
-    childrenChanged(true, newChild->previousSibling(), &nextChild, 1);
-
-    notifyNodeInserted(*newChild);
+    notifyNodeInserted(*newChild, ChildrenChangeSourceParser);
 }
 
 void ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* oldChild, ExceptionState& exceptionState)
@@ -482,8 +482,8 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
         Node* prev = child->previousSibling();
         Node* next = child->nextSibling();
         removeBetween(prev, next, *child);
-        childrenChanged(false, prev, next, -1);
         notifyNodeRemoved(*child);
+        childrenChanged(false, prev, next, -1);
     }
     dispatchSubtreeModifiedEvent();
 }
@@ -564,23 +564,29 @@ void ContainerNode::removeChildren()
         document().nodeChildrenWillBeRemoved(*this);
     }
 
-
+    // FIXME: Remove this NodeVector. Right now WebPluginContainerImpl::m_element is a
+    // raw ptr which means the code below can drop the last ref to a plugin element and
+    // then the code in UpdateSuspendScope::performDeferredWidgetTreeOperations will
+    // try to destroy the plugin which will be a use-after-free. We should use a RefPtr
+    // in the WebPluginContainerImpl instead.
     NodeVector removedChildren;
     {
         HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+
         {
             NoEventDispatchAssertion assertNoEventDispatch;
+            ScriptForbiddenScope forbidScript;
+
             removedChildren.reserveInitialCapacity(countChildren());
-            while (m_firstChild) {
-                removedChildren.append(m_firstChild);
-                removeBetween(0, m_firstChild->nextSibling(), *m_firstChild);
+
+            while (RefPtrWillBeRawPtr<Node> child = m_firstChild) {
+                removeBetween(0, child->nextSibling(), *child);
+                removedChildren.append(child.get());
+                notifyNodeRemoved(*child);
             }
         }
 
         childrenChanged(false, 0, 0, -static_cast<int>(removedChildren.size()));
-
-        for (size_t i = 0; i < removedChildren.size(); ++i)
-            notifyNodeRemoved(*removedChildren[i]);
     }
 
     dispatchSubtreeModifiedEvent();
@@ -651,10 +657,10 @@ void ContainerNode::parserAppendChild(PassRefPtrWillBeRawPtr<Node> newChild)
     ASSERT(!newChild->isDocumentFragment());
     ASSERT(!isHTMLTemplateElement(this));
 
+    RefPtrWillBeRawPtr<Node> protect(this);
+
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
-
-    Node* last = m_lastChild;
 
     {
         NoEventDispatchAssertion assertNoEventDispatch;
@@ -666,11 +672,10 @@ void ContainerNode::parserAppendChild(PassRefPtrWillBeRawPtr<Node> newChild)
         ChildListMutationScope(*this).childAdded(*newChild);
     }
 
-    childrenChanged(true, last, 0, 1);
-    notifyNodeInserted(*newChild);
+    notifyNodeInserted(*newChild, ChildrenChangeSourceParser);
 }
 
-void ContainerNode::notifyNodeInserted(Node& root)
+void ContainerNode::notifyNodeInserted(Node& root, ChildrenChangeSource source)
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
 
@@ -681,6 +686,14 @@ void ContainerNode::notifyNodeInserted(Node& root)
 
     NodeVector postInsertionNotificationTargets;
     notifyNodeInsertedInternal(root, postInsertionNotificationTargets);
+
+    // ShadowRoots are not real children, we don't need to tell host that it's
+    // children changed when one is added.
+    // FIXME: We should have a separate code path for ShadowRoot since it only
+    // needs to call insertedInto and the rest of this logic is not needed.
+    if (!root.isShadowRoot()) {
+        childrenChanged(source == ChildrenChangeSourceParser, root.previousSibling(), root.nextSibling(), 1);
+    }
 
     for (size_t i = 0; i < postInsertionNotificationTargets.size(); ++i) {
         Node* targetNode = postInsertionNotificationTargets[i].get();
@@ -1092,8 +1105,6 @@ void ContainerNode::updateTreeAfterInsertion(Node& child)
 #endif
 
     ChildListMutationScope(*this).childAdded(child);
-
-    childrenChanged(false, child.previousSibling(), child.nextSibling(), 1);
 
     notifyNodeInserted(child);
 

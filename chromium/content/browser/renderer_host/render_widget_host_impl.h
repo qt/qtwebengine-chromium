@@ -295,6 +295,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void ForwardTouchEvent(
       const blink::WebTouchEvent& touch_event) OVERRIDE;
   virtual void SetCursor(const WebCursor& cursor) OVERRIDE;
+  virtual void ShowContextMenuAtPoint(const gfx::Point& point) OVERRIDE;
 
   // Queues a synthetic gesture for testing purposes.  Invokes the on_complete
   // callback when the gesture is finished running.
@@ -716,7 +717,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates whether a page is loading or not.
   bool is_loading_;
 
-  // Indicates whether a page is hidden or not.
+  // Indicates whether a page is hidden or not. It has to stay in sync with the
+  // most recent call to process_->WidgetRestored() / WidgetHidden().
   bool is_hidden_;
 
   // Indicates whether a page is fullscreen or not.

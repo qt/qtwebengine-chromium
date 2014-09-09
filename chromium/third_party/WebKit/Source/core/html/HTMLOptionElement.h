@@ -68,6 +68,8 @@ public:
 
     bool isDisplayNone() const;
 
+    virtual void removedFrom(ContainerNode* insertionPoint) OVERRIDE;
+
 private:
     explicit HTMLOptionElement(Document&);
 

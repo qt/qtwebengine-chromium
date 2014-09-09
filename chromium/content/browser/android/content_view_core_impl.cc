@@ -944,7 +944,10 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                                            jfloat touch_major_0,
                                            jfloat touch_major_1,
                                            jfloat raw_pos_x,
-                                           jfloat raw_pos_y) {
+                                           jfloat raw_pos_y,
+                                           jint android_tool_type_0,
+                                           jint android_tool_type_1,
+                                           jint android_button_state) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   // Avoid synthesizing a touch event if it cannot be forwarded.
   if (!rwhv)
@@ -967,7 +970,10 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                            touch_major_0,
                            touch_major_1,
                            raw_pos_x,
-                           raw_pos_y);
+                           raw_pos_y,
+                           android_tool_type_0,
+                           android_tool_type_1,
+                           android_button_state);
 
   return rwhv->OnTouchEvent(event);
 }
@@ -1523,6 +1529,14 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
   SetAccessibilityEnabledInternal(enabled);
 }
 
+void ContentViewCoreImpl::ShowSelectionHandlesAutomatically() const {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_showSelectionHandlesAutomatically(env, obj.obj());
+}
+
 void ContentViewCoreImpl::SetAccessibilityEnabledInternal(bool enabled) {
   accessibility_enabled_ = enabled;
   RenderWidgetHostViewAndroid* host_view = GetRenderWidgetHostViewAndroid();
@@ -1598,14 +1612,18 @@ void ContentViewCoreImpl::RequestTextSurroundingSelection(
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(
-    const base::string16& result) {
+    const base::string16& text,
+    const base::string16& html,
+    const gfx::Rect& clip_rect) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  ScopedJavaLocalRef<jstring> jresult = ConvertUTF16ToJavaString(env, result);
+  ScopedJavaLocalRef<jstring> jtext = ConvertUTF16ToJavaString(env, text);
+  ScopedJavaLocalRef<jstring> jhtml = ConvertUTF16ToJavaString(env, html);
+  ScopedJavaLocalRef<jobject> clip_rect_object(CreateJavaRect(env, clip_rect));
   Java_ContentViewCore_onSmartClipDataExtracted(
-      env, obj.obj(), jresult.obj());
+      env, obj.obj(), jtext.obj(), jhtml.obj(), clip_rect_object.obj());
 }
 
 void ContentViewCoreImpl::WebContentsDestroyed() {

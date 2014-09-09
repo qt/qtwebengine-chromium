@@ -343,6 +343,14 @@ Node::InsertionNotificationRequest HTMLOptionElement::insertedInto(ContainerNode
     return HTMLElement::insertedInto(insertionPoint);
 }
 
+void HTMLOptionElement::removedFrom(ContainerNode* insertionPoint)
+{
+    if (HTMLSelectElement* select = Traversal<HTMLSelectElement>::firstAncestorOrSelf(*insertionPoint)) {
+        select->setRecalcListItems();
+    }
+    HTMLElement::removedFrom(insertionPoint);
+}
+
 String HTMLOptionElement::collectOptionInnerText() const
 {
     StringBuilder text;

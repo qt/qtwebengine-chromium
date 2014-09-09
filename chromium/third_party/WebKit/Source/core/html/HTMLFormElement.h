@@ -177,6 +177,8 @@ private:
     bool m_didFinishParsingChildren;
 
     bool m_wasUserSubmitted;
+    bool m_isSubmittingOrInUserJSSubmitEvent;
+    bool m_shouldSubmit;
 
     bool m_isInResetFunction;
 
