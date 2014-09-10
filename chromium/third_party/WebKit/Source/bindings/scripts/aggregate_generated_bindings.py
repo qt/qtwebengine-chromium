@@ -54,7 +54,7 @@ import re
 import subprocess
 import sys
 
-from utilities import idl_filename_to_interface_name
+from utilities import idl_filename_to_interface_name, abs
 
 # A regexp for finding Conditional attributes in interface definitions.
 CONDITIONAL_PATTERN = re.compile(
@@ -201,7 +201,7 @@ def main(args):
     if len(args) <= 4:
         raise Exception('Expected at least 5 arguments.')
     component_dir = args[1]
-    input_file_name = args[2]
+    input_file_name = abs(args[2])
     in_out_break_index = args.index('--')
     output_file_names = args[in_out_break_index + 1:]
 
