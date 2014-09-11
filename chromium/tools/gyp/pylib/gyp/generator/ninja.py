@@ -1004,6 +1004,8 @@ class NinjaWriter:
 
     implicit_deps = set()
     solibs = set()
+    objects = list(link_deps)
+    libs = list()
 
     if 'dependencies' in spec:
       # Two kinds of dependencies:
@@ -1037,6 +1039,7 @@ class NinjaWriter:
         final_output = target.FinalOutput()
         if not linkable or final_output != target.binary:
           implicit_deps.add(final_output)
+      libs.extend(extra_link_deps)
 
     extra_bindings = []
     if self.uses_cpp and self.flavor != 'win':
@@ -1179,18 +1182,20 @@ class NinjaWriter:
         prefixed_libraries = self.msvs_settings.AdjustLibraries(prefixed_libraries)
 
       # Make sure that we have relative paths to our out/(Release|Debug), where we generate our .pri file, and then prepend $$PWD to them.
-      prefixed_object_and_archives = ['$$PWD/' + o for o in toAbsPaths(link_deps)]
+      prefixed_objects = ['$$PWD/' + o for o in toAbsPaths(objects)]
+      prefixed_archives = ['$$PWD/' + o for o in toAbsPaths(libs)]
 
       pri_file.write("QMAKE_LFLAGS += %s\n" % qmakeLiteral(' '.join(prefixed_lflags)))
+      pri_file.write("OBJECTS += %s\n" % qmakeLiteral(' '.join(prefixed_objects)))
       # Follow the logic of the solink rule.
       if self.flavor != 'mac' and self.flavor != 'win':
-        pri_file.write("LIBS_PRIVATE += -Wl,--whole-archive %s -Wl,--no-whole-archive\n" % qmakeLiteral(' '.join(prefixed_object_and_archives)))
+        pri_file.write("LIBS_PRIVATE += -Wl,--whole-archive %s -Wl,--no-whole-archive\n" % qmakeLiteral(' '.join(prefixed_archives)))
       else:
-        pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_object_and_archives)))
+        pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_archives)))
       # External libs have to come after objects/archives, the linker resolve them in order.
       pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_library_dirs + prefixed_libraries)))
       # Make sure that if ninja modifies one of the inputs, qmake/make will link again.
-      pri_file.write("POST_TARGETDEPS += %s\n" % qmakeLiteral(' '.join(prefixed_object_and_archives)))
+      pri_file.write("POST_TARGETDEPS += %s\n" % qmakeLiteral(' '.join(prefixed_objects + prefixed_archives)))
       pri_file.close()
 
       # In this mode we prevent letting ninja link at all.
