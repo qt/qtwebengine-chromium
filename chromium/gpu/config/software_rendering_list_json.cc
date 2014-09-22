@@ -833,6 +833,24 @@ LONG_STRING_CONST(
           "value": "6.0"
         }
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "contains",
+            "value": "Mesa"
+          },
+          "gl_renderer": {
+            "op": "contains",
+            "value": "Gallium"
+          }
+        },
+        {
+          "driver_vendor": {
+            "op": "contains",
+            "value": "llvmpipe"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
