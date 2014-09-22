@@ -104,8 +104,10 @@ static inline void getRenderStyleForStrike(FontRenderStyle& fontRenderStyle, con
 #if OS(ANDROID)
     style.setDefaults();
 #else
-    if (!font || !*font)
-        style.setDefaults(); // It's probably a webfont. Take the system defaults.
+    if (!font || !*font) {
+        // This is probably a webfont.
+        blink::WebFontInfo::renderStyleForStrike(font, sizeAndStyle, &style);
+    }
     else if (blink::Platform::current()->sandboxSupport())
         blink::Platform::current()->sandboxSupport()->getRenderStyleForStrike(font, sizeAndStyle, &style);
     else

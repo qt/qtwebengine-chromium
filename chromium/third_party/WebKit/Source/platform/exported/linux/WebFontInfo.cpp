@@ -141,9 +141,12 @@ void WebFontInfo::renderStyleForStrike(const char* family, int sizeAndStyle, Web
     FcPattern* pattern = FcPatternCreate();
     FcValue fcvalue;
 
-    fcvalue.type = FcTypeString;
-    fcvalue.u.s = reinterpret_cast<const FcChar8 *>(family);
-    FcPatternAdd(pattern, FC_FAMILY, fcvalue, FcFalse);
+    // A WebFont might not have family name yet, but we still want to pick up defaults for the size and style.
+    if (family && *family) {
+        fcvalue.type = FcTypeString;
+        fcvalue.u.s = reinterpret_cast<const FcChar8 *>(family);
+        FcPatternAdd(pattern, FC_FAMILY, fcvalue, FcFalse);
+    }
 
     fcvalue.type = FcTypeInteger;
     fcvalue.u.i = isBold ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL;
