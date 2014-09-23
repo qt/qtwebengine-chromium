@@ -77,6 +77,7 @@ from v8_globals import includes, interfaces
 import v8_interface
 import v8_types
 from v8_utilities import capitalize, cpp_name, conditional_string, v8_class_name
+from utilities import abs
 
 
 class CodeGeneratorV8(object):
@@ -197,7 +198,7 @@ def runtime_enabled_if(code, runtime_enabled_function_name):
 def main(argv):
     # If file itself executed, cache templates
     try:
-        cache_dir = argv[1]
+        cache_dir = abs(argv[1])
         dummy_filename = argv[2]
     except IndexError as err:
         print 'Usage: %s CACHE_DIR DUMMY_FILENAME' % argv[0]

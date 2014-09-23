@@ -40,7 +40,7 @@ import sys
 
 from code_generator_v8 import CodeGeneratorV8
 from idl_reader import IdlReader
-from utilities import write_file
+from utilities import write_file, abs
 
 
 def parse_options():
@@ -132,9 +132,9 @@ class IdlCompilerV8(IdlCompiler):
 def main():
     options, idl_filename = parse_options()
     idl_compiler = IdlCompilerV8(
-        options.output_directory,
-        cache_directory=options.cache_directory,
-        interfaces_info_filename=options.interfaces_info_file,
+        abs(options.output_directory),
+        cache_directory=abs(options.cache_directory),
+        interfaces_info_filename=abs(options.interfaces_info_file),
         only_if_changed=options.write_file_only_if_changed)
     idl_compiler.compile_file(idl_filename)
 

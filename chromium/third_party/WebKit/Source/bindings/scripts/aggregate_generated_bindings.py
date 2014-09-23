@@ -222,7 +222,7 @@ def main(args):
                 if hash(meta_data['name']) % total_partitions == partition]
         file_contents = generate_content(component_dir,
                                          files_meta_data_this_partition)
-        write_content(file_contents, file_name)
+        write_content(file_contents, abs(file_name))
 
 
 if __name__ == '__main__':
