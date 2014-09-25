@@ -1042,14 +1042,6 @@
               '<!@(<(pkg-config) --cflags libudev)'
             ],
           },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other libudev)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l libudev)',
-            ],
-          },
         }],
       ],
     },

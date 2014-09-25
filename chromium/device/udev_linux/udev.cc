@@ -6,22 +6,24 @@
 
 #include "device/udev_linux/udev.h"
 
+device::LibUdevWrapper libudev;
+
 namespace device {
 
 void UdevDeleter::operator()(udev* dev) const {
-  udev_unref(dev);
+  libudev.udev_unref(dev);
 }
 
 void UdevEnumerateDeleter::operator()(udev_enumerate* enumerate) const {
-  udev_enumerate_unref(enumerate);
+  libudev.udev_enumerate_unref(enumerate);
 }
 
 void UdevDeviceDeleter::operator()(udev_device* device) const {
-  udev_device_unref(device);
+  libudev.udev_device_unref(device);
 }
 
 void UdevMonitorDeleter::operator()(udev_monitor* monitor) const {
-  udev_monitor_unref(monitor);
+  libudev.udev_monitor_unref(monitor);
 }
 
 }  // namespace device
