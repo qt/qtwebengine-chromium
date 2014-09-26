@@ -2029,7 +2029,7 @@
       ['chromeos==1', {
         'grit_defines': ['-D', 'chromeos', '-D', 'scale_factors=2x'],
       }],
-      ['desktop_linux==1', {
+      ['desktop_linux==1 or qt_os=="embedded_linux"', {
         'grit_defines': ['-D', 'desktop_linux'],
       }],
       ['toolkit_views==1', {
