@@ -31,6 +31,7 @@ namespace content {
 class P2PSocketHost;
 class ResourceContext;
 
+#if defined(ENABLE_WEBRTC)
 class P2PSocketDispatcherHost
     : public content::BrowserMessageFilter,
       public net::NetworkChangeNotifier::IPAddressObserver {
@@ -113,6 +114,7 @@ class P2PSocketDispatcherHost
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcherHost);
 };
+#endif
 
 }  // namespace content
 
