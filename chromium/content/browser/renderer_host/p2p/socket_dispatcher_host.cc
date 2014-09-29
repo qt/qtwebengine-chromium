@@ -148,6 +148,7 @@ void P2PSocketDispatcherHost::OnIPAddressChanged() {
           &P2PSocketDispatcherHost::DoGetNetworkList, this));
 }
 
+#if defined(ENABLE_WEBRTC)
 void P2PSocketDispatcherHost::StartRtpDump(
     bool incoming,
     bool outgoing,
@@ -179,6 +180,7 @@ void P2PSocketDispatcherHost::StopRtpDumpOnUIThread(bool incoming,
                  incoming,
                  outgoing));
 }
+#endif
 
 P2PSocketDispatcherHost::~P2PSocketDispatcherHost() {
   DCHECK(sockets_.empty());
