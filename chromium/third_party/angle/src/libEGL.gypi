@@ -67,7 +67,7 @@
     # anything also change angle/BUILD.gn
     'conditions':
     [
-        ['OS=="win"',
+        ['OS=="win" and use_qt==0',
         {
             'targets':
             [
