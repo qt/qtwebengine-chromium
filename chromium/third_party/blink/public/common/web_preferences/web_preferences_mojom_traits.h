@@ -292,6 +292,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.touch_event_feature_detection_enabled;
   }
 
+  static bool enable_error_page(
+      const blink::web_pref::WebPreferences& r) {
+    return r.enable_error_page;
+  }
+
   static uint32_t pointer_events_max_touch_points(
       const blink::web_pref::WebPreferences& r) {
     return r.pointer_events_max_touch_points;
