@@ -93,7 +93,7 @@ const size_t kPngChunkMetadataSize = 12;  // length, type, crc32
 const unsigned char kPngScaleChunkType[4] = { 'c', 's', 'C', 'l' };
 const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 constexpr std::string_view kPakFileExtension = ".pak";
 #endif
 
@@ -487,7 +487,7 @@ void ResourceBundle::AddDataPackFromFileRegion(
   }
 }
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 // static
 base::FilePath ResourceBundle::GetLocaleFilePath(std::string_view app_locale) {
   if (app_locale.empty())
