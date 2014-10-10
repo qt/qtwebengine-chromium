@@ -165,6 +165,7 @@ struct WebPreferences {
   bool enable_scroll_animator;
   bool prefers_reduced_motion;
   bool touch_event_feature_detection_enabled;
+  bool enable_error_page;
   int32 pointer_events_max_touch_points;
   int32 available_pointer_types;
   PointerType primary_pointer_type;
