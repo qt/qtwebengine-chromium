@@ -158,6 +158,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool should_print_backgrounds;
   bool should_clear_document_background;
   bool enable_scroll_animator;
+  bool enable_error_page;
   bool css_variables_enabled;
   bool touch_enabled;
   // TODO(mustaq): Nuke when the new API is ready
