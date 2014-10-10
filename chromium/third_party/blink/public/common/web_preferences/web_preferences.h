@@ -120,6 +120,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool prefers_reduced_transparency = false;
   bool inverted_colors = false;
   bool touch_event_feature_detection_enabled = false;
+  bool enable_error_page = true;
   int pointer_events_max_touch_points = 0;
   int available_pointer_types = 0;
   blink::mojom::PointerType primary_pointer_type =
