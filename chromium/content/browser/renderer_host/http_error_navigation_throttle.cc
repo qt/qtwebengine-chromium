@@ -48,7 +48,7 @@ HttpErrorNavigationThrottle::WillProcessResponse() {
     return PROCEED;
   int response_code = response->headers->response_code();
   if (response_code < 400 ||
-      !GetContentClient()->browser()->HasErrorPage(response_code)) {
+      !GetContentClient()->browser()->HasErrorPage(response_code, navigation_handle()->GetWebContents())) {
     return PROCEED;
   }
 
