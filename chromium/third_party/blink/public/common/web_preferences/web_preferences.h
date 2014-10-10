@@ -126,6 +126,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool threaded_scrolling_enabled;
   bool prefers_reduced_motion;
   bool touch_event_feature_detection_enabled;
+  bool enable_error_page;
   int pointer_events_max_touch_points;
   int available_pointer_types;
   blink::mojom::PointerType primary_pointer_type;
