@@ -253,7 +253,7 @@ bool IsLocalePartiallyPopulated(const std::string& locale_name) {
   return !l10n_util::IsLocaleNameTranslated("en", locale_name);
 }
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
 bool IsLocaleAvailable(const std::string& locale) {
   // If locale has any illegal characters in it, we don't want to try to
   // load it because it may be pointing outside the locale data file directory.
@@ -339,7 +339,7 @@ std::string GetLanguage(const std::string& locale) {
 // and generic locale fallback based on ICU/CLDR.
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   NOTIMPLEMENTED();
   return false;
 #else
@@ -426,7 +426,7 @@ bool CheckAndResolveLocale(const std::string& locale,
 }
 
 std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
 
   // Use any override (Cocoa for the browser), otherwise use the preference
   // passed to the function.
@@ -478,7 +478,7 @@ std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
   // On Android, query java.util.Locale for the default locale.
   candidates.push_back(base::android::GetDefaultLocaleString());
 
-#elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
+#elif defined(USE_GLIB) && !defined(OS_CHROMEOS) && !defined(TOOLKIT_QT)
 
   // GLib implements correct environment variable parsing with
   // the precedence order: LANGUAGE, LC_ALL, LC_MESSAGES and LANG.
