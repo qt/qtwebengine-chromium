@@ -91,6 +91,7 @@ WebPreferences::WebPreferences()
       prefers_reduced_transparency(false),
       inverted_colors(false),
       touch_event_feature_detection_enabled(false),
+      enable_error_page(true),
       pointer_events_max_touch_points(0),
       available_pointer_types(0),
       primary_pointer_type(blink::mojom::PointerType::kPointerNone),
