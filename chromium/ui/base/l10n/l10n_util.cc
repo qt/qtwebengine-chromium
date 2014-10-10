@@ -488,7 +488,7 @@ std::optional<std::string> CheckAndResolveLocale(std::string_view locale,
   return std::nullopt;
 }
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_QTWEBENGINE)
 std::string GetApplicationLocaleInternalMac(std::string_view pref_locale) {
   // Use any override (Cocoa for the browser), otherwise use the preference
   // passed to the function.
@@ -505,7 +505,7 @@ std::string GetApplicationLocaleInternalMac(std::string_view pref_locale) {
 }
 #endif
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 std::string GetApplicationLocaleInternalNonMac(std::string_view pref_locale) {
   std::vector<std::string> candidates;
 
@@ -536,7 +536,7 @@ std::string GetApplicationLocaleInternalNonMac(std::string_view pref_locale) {
 
   // On Android, query java.util.Locale for the default locale.
   candidates.push_back(base::android::GetDefaultLocaleString());
-#elif defined(USE_GLIB) && !BUILDFLAG(IS_CHROMEOS)
+#elif defined(USE_GLIB) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
   // GLib implements correct environment variable parsing with
   // the precedence order: LANGUAGE, LC_ALL, LC_MESSAGES and LANG.
   // We used to use our custom parsing code along with ICU for this purpose.
@@ -577,7 +577,7 @@ std::string GetApplicationLocaleInternalNonMac(std::string_view pref_locale) {
 #endif  // !BUILDFLAG(IS_APPLE)
 
 std::string GetApplicationLocaleInternal(std::string_view pref_locale) {
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_QTWEBENGINE)
   return GetApplicationLocaleInternalMac(pref_locale);
 #else
   return GetApplicationLocaleInternalNonMac(pref_locale);
