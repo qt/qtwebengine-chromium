@@ -128,6 +128,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool should_print_backgrounds;
   bool should_clear_document_background;
   bool enable_scroll_animator;
+  bool enable_error_page;
   bool css_variables_enabled;
   bool region_based_columns_enabled;
   bool touch_enabled;

@@ -113,6 +113,7 @@ WebPreferences::WebPreferences()
       should_print_backgrounds(false),
       should_clear_document_background(true),
       enable_scroll_animator(false),
+      enable_error_page(true),
       region_based_columns_enabled(false),
       touch_enabled(false),
       device_supports_touch(false),
