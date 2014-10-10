@@ -74,7 +74,7 @@ const size_t kPngChunkMetadataSize = 12;  // length, type, crc32
 const unsigned char kPngScaleChunkType[4] = { 'c', 's', 'C', 'l' };
 const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
-#if !defined(OS_APPLE)
+#if !defined(OS_APPLE) || defined(TOOLKIT_QT)
 const char kPakFileExtension[] = ".pak";
 #endif
 
@@ -364,7 +364,7 @@ void ResourceBundle::AddDataPackFromFileRegion(
   }
 }
 
-#if !defined(OS_APPLE)
+#if !defined(OS_APPLE) || defined(TOOLKIT_QT)
 // static
 base::FilePath ResourceBundle::GetLocaleFilePath(
     const std::string& app_locale) {
