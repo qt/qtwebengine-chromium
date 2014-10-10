@@ -120,6 +120,7 @@ WebPreferences::WebPreferences()
       enable_scroll_animator(false),
       prefers_reduced_motion(false),
       touch_event_feature_detection_enabled(false),
+      enable_error_page(true),
       touch_adjustment_enabled(true),
       pointer_events_max_touch_points(0),
       available_pointer_types(0),
