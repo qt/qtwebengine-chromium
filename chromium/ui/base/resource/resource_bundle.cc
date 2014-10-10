@@ -244,7 +244,7 @@ void ResourceBundle::AddDataPackFromFile(base::File file,
   }
 }
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
 base::FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
                                                  bool test_file_exists) {
   if (app_locale.empty())
