@@ -49,7 +49,7 @@ import sys
 
 from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl, get_partial_interface_name_from_idl, get_implements_from_idl, get_parent_interface, get_put_forward_interfaces_from_idl
 
-module_path = os.path.dirname(__file__)
+module_path = os.path.abspath(os.path.dirname(__file__))
 source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir))
 
 # Global variables (filled in and exported)
@@ -85,13 +85,20 @@ def parse_options():
 # Computations
 ################################################################################
 
-def include_path(idl_filename, implemented_as=None):
+def include_path(idl_filename, component_dir, implemented_as=None):
     """Returns relative path to header file in POSIX format; used in includes.
 
     POSIX format is used for consistency of output, so reference tests are
     platform-independent.
     """
-    relative_path_local = os.path.relpath(idl_filename, source_path)
+    # Some IDL files are generated at build-time and are not sourced in the
+    # Blink repository. So to avoid incorrect and/or very long relative paths
+    # in our include_paths, we have to compute the relative path specially
+    # for these generated IDL files.
+    if idl_filename.startswith(source_path):
+        relative_path_local = os.path.relpath(idl_filename, source_path)
+    else:
+        relative_path_local = os.path.join(component_dir, os.path.basename(idl_filename))
     relative_dir_local = os.path.dirname(relative_path_local)
     relative_dir_posix = relative_dir_local.replace(os.path.sep, posixpath.sep)
 
@@ -115,7 +122,7 @@ def compute_info_individual(idl_filename, component_dir):
 
     extended_attributes = get_interface_extended_attributes_from_idl(idl_file_contents)
     implemented_as = extended_attributes.get('ImplementedAs')
-    this_include_path = include_path(idl_filename, implemented_as)
+    this_include_path = include_path(idl_filename, component_dir, implemented_as)
 
     # Handle partial interfaces
     partial_interface_name = get_partial_interface_name_from_idl(idl_file_contents)
@@ -181,7 +188,7 @@ def main():
     # Information is stored in global variables interfaces_info and
     # partial_interface_files.
     for idl_filename in idl_files:
-        compute_info_individual(idl_filename, options.component_dir)
+        compute_info_individual(os.path.abspath(idl_filename), options.component_dir)
 
     write_pickle_file(options.interfaces_info_file,
                       info_individual(),
