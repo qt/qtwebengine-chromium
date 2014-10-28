@@ -677,7 +677,7 @@ ScrollAnimatorMac::ScrollAnimatorMac(ScrollableArea* scrollableArea)
     if (ScrollbarThemeMacCommon::isOverlayAPIAvailable()) {
         m_scrollbarPainterControllerDelegate.adoptNS([[WebScrollbarPainterControllerDelegate alloc] initWithScrollableArea:scrollableArea]);
         m_scrollbarPainterController = [[[NSClassFromString(@"NSScrollerImpPair") alloc] init] autorelease];
-        [m_scrollbarPainterController.get() performSelector:@selector(setDelegate:) withObject:m_scrollbarPainterControllerDelegate.get()];
+        [m_scrollbarPainterController.get() performSelector:@selector(setDelegate:) withObject:(id)m_scrollbarPainterControllerDelegate.get()];
         [m_scrollbarPainterController.get() setScrollerStyle:ScrollbarThemeMacCommon::recommendedScrollerStyle()];
     }
 }
@@ -917,7 +917,7 @@ void ScrollAnimatorMac::didAddVerticalScrollbar(Scrollbar* scrollbar)
     ASSERT(!m_verticalScrollbarPainterDelegate);
     m_verticalScrollbarPainterDelegate.adoptNS([[WebScrollbarPainterDelegate alloc] initWithScrollbar:scrollbar]);
 
-    [painter setDelegate:m_verticalScrollbarPainterDelegate.get()];
+    [painter setDelegate:(id)m_verticalScrollbarPainterDelegate.get()];
     [m_scrollbarPainterController.get() setVerticalScrollerImp:painter];
     if (scrollableArea()->inLiveResize())
         [painter setKnobAlpha:1];
@@ -952,7 +952,7 @@ void ScrollAnimatorMac::didAddHorizontalScrollbar(Scrollbar* scrollbar)
     ASSERT(!m_horizontalScrollbarPainterDelegate);
     m_horizontalScrollbarPainterDelegate.adoptNS([[WebScrollbarPainterDelegate alloc] initWithScrollbar:scrollbar]);
 
-    [painter setDelegate:m_horizontalScrollbarPainterDelegate.get()];
+    [painter setDelegate:(id)m_horizontalScrollbarPainterDelegate.get()];
     [m_scrollbarPainterController.get() setHorizontalScrollerImp:painter];
     if (scrollableArea()->inLiveResize())
         [painter setKnobAlpha:1];
