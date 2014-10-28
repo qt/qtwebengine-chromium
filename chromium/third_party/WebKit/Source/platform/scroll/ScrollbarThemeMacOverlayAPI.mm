@@ -54,12 +54,25 @@ static bool supportsExpandedScrollbars()
     return globalSupportsExpandedScrollbars;
 }
 
+static NSControlSize scrollbarControlSizeToNSControlSize(ScrollbarControlSize controlSize)
+{
+    switch (controlSize) {
+    case RegularScrollbar:
+        return NSRegularControlSize;
+    case SmallScrollbar:
+        return NSSmallControlSize;
+    }
+
+    ASSERT_NOT_REACHED();
+    return NSRegularControlSize;
+}
+
 void ScrollbarThemeMacOverlayAPI::registerScrollbar(ScrollbarThemeClient* scrollbar)
 {
     ScrollbarThemeMacCommon::registerScrollbar(scrollbar);
 
     bool isHorizontal = scrollbar->orientation() == HorizontalScrollbar;
-    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:(NSControlSize)scrollbar->controlSize() horizontal:isHorizontal replacingScrollerImp:nil];
+    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:scrollbarControlSizeToNSControlSize(scrollbar->controlSize()) horizontal:isHorizontal replacingScrollerImp:nil];
     scrollbarPainterMap()->add(scrollbar, scrollbarPainter);
     updateEnabledState(scrollbar);
     updateScrollbarOverlayStyle(scrollbar);
@@ -122,7 +135,7 @@ void ScrollbarThemeMacOverlayAPI::paintThumb(GraphicsContext* context, Scrollbar
 
 int ScrollbarThemeMacOverlayAPI::scrollbarThickness(ScrollbarControlSize controlSize)
 {
-    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:controlSize horizontal:NO replacingScrollerImp:nil];
+    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:scrollbarControlSizeToNSControlSize(controlSize) horizontal:NO replacingScrollerImp:nil];
     if (supportsExpandedScrollbars())
         [scrollbarPainter setExpanded:YES];
     return [scrollbarPainter trackBoxWidth];

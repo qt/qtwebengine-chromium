@@ -992,7 +992,7 @@ bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const 
         return true;
 
     float zoomLevel = renderObject->style()->effectiveZoom();
-    int controlSize = controlSizeForFont(renderObject->style());
+    NSControlSize controlSize = controlSizeForFont(renderObject->style());
     IntSize size = progressBarSizes()[controlSize];
     size.setHeight(size.height() * zoomLevel);
     size.setWidth(rect.width());
