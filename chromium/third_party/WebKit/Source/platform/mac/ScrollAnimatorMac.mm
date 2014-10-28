@@ -694,7 +694,7 @@ ScrollAnimatorMac::ScrollAnimatorMac(ScrollableArea* scrollableArea)
 
     m_scrollbarPainterControllerDelegate.adoptNS([[BlinkScrollbarPainterControllerDelegate alloc] initWithScrollableArea:scrollableArea]);
     m_scrollbarPainterController = [[[NSClassFromString(@"NSScrollerImpPair") alloc] init] autorelease];
-    [m_scrollbarPainterController.get() performSelector:@selector(setDelegate:) withObject:m_scrollbarPainterControllerDelegate.get()];
+    [m_scrollbarPainterController.get() performSelector:@selector(setDelegate:) withObject:(id)m_scrollbarPainterControllerDelegate.get()];
     [m_scrollbarPainterController.get() setScrollerStyle:ScrollbarThemeMac::recommendedScrollerStyle()];
 }
 
@@ -897,7 +897,7 @@ void ScrollAnimatorMac::didAddVerticalScrollbar(Scrollbar& scrollbar)
     ASSERT(!m_verticalScrollbarPainterDelegate);
     m_verticalScrollbarPainterDelegate.adoptNS([[BlinkScrollbarPainterDelegate alloc] initWithScrollbar:&scrollbar]);
 
-    [painter setDelegate:m_verticalScrollbarPainterDelegate.get()];
+    [painter setDelegate:(id)m_verticalScrollbarPainterDelegate.get()];
     [m_scrollbarPainterController.get() setVerticalScrollerImp:painter];
 }
 
@@ -924,7 +924,7 @@ void ScrollAnimatorMac::didAddHorizontalScrollbar(Scrollbar& scrollbar)
     ASSERT(!m_horizontalScrollbarPainterDelegate);
     m_horizontalScrollbarPainterDelegate.adoptNS([[BlinkScrollbarPainterDelegate alloc] initWithScrollbar:&scrollbar]);
 
-    [painter setDelegate:m_horizontalScrollbarPainterDelegate.get()];
+    [painter setDelegate:(id)m_horizontalScrollbarPainterDelegate.get()];
     [m_scrollbarPainterController.get() setHorizontalScrollerImp:painter];
 }
 
