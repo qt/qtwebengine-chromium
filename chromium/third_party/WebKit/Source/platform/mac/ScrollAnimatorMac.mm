@@ -897,7 +897,7 @@ void ScrollAnimatorMac::didAddVerticalScrollbar(Scrollbar& scrollbar) {
   m_verticalScrollbarPainterDelegate.adoptNS(
       [[BlinkScrollbarPainterDelegate alloc] initWithScrollbar:&scrollbar]);
 
-  [painter setDelegate:m_verticalScrollbarPainterDelegate.get()];
+  [painter setDelegate:(id)m_verticalScrollbarPainterDelegate.get()];
   [m_scrollbarPainterController.get() setVerticalScrollerImp:painter];
 }
 
@@ -923,7 +923,7 @@ void ScrollAnimatorMac::didAddHorizontalScrollbar(Scrollbar& scrollbar) {
   m_horizontalScrollbarPainterDelegate.adoptNS(
       [[BlinkScrollbarPainterDelegate alloc] initWithScrollbar:&scrollbar]);
 
-  [painter setDelegate:m_horizontalScrollbarPainterDelegate.get()];
+  [painter setDelegate:(id)m_horizontalScrollbarPainterDelegate.get()];
   [m_scrollbarPainterController.get() setHorizontalScrollerImp:painter];
 }
 
