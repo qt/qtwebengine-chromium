@@ -1283,7 +1283,7 @@ NSDictionary* attributeToMethodNameMap = nil;
 // Returns the count of the specified accessibility array attribute.
 - (NSUInteger)accessibilityArrayAttributeCount:(NSString*)attribute {
   if (!browserAccessibility_)
-    return nil;
+    return 0;
 
   NSArray* fullArray = [self accessibilityAttributeValue:attribute];
   return [fullArray count];
@@ -1439,7 +1439,7 @@ NSDictionary* attributeToMethodNameMap = nil;
 // Returns the index of the child in this objects array of children.
 - (NSUInteger)accessibilityGetIndexOf:(id)child {
   if (!browserAccessibility_)
-    return nil;
+    return 0;
 
   NSUInteger index = 0;
   for (BrowserAccessibilityCocoa* childToCheck in [self children]) {
@@ -1454,7 +1454,7 @@ NSDictionary* attributeToMethodNameMap = nil;
 // accessibility API via |accessibilitySetValue:forAttribute:|.
 - (BOOL)accessibilityIsAttributeSettable:(NSString*)attribute {
   if (!browserAccessibility_)
-    return nil;
+    return NO;
 
   if ([attribute isEqualToString:NSAccessibilityFocusedAttribute])
     return GetState(browserAccessibility_,
