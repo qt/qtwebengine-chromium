@@ -18,6 +18,8 @@
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
 #include "ui/gl/trace_util.h"
 
+#include <GL/gl.h>
+
 namespace viz {
 
 namespace {

@@ -32,6 +32,7 @@
 #include "skia/ext/image_operations.h"
 #include "skia/ext/legacy_display_globals.h"
 #include "skia/ext/opacity_filter_canvas.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"

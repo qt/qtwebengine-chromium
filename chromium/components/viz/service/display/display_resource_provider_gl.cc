@@ -316,7 +316,7 @@ void DisplayResourceProviderGL::WaitSyncTokenInternal(ChildResource* resource) {
 DisplayResourceProviderGL::ScopedReadLockGL::ScopedReadLockGL(
     DisplayResourceProviderGL* resource_provider,
     ResourceId resource_id)
-    : resource_provider_(resource_provider), resource_id_(resource_id) {
+    : resource_provider_(resource_provider), resource_id_(resource_id), target_(GL_TEXTURE_2D) {
   const ChildResource* resource =
       resource_provider->LockForRead(resource_id, false /* overlay_only */);
   // TODO(ericrk): We should never fail LockForRead, but we appear to be
