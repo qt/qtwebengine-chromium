@@ -34,8 +34,6 @@
 #include "cc/resources/single_release_callback_impl.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/size.h"
@@ -50,6 +48,9 @@ namespace gles {
 class GLES2Interface;
 }
 }
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef int              GLint;
 
 namespace gfx {
 class Rect;
