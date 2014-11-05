@@ -25,6 +25,7 @@ class GL_EXPORT GLFenceEGL : public GLFence {
   static std::unique_ptr<GLFenceEGL> Create(EGLenum type, EGLint* attribs);
 
   // GLFence implementation:
+  TransferableFence Transfer() override;
   bool HasCompleted() override;
   void ClientWait() override;
   void ServerWait() override;
