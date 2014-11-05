@@ -18,10 +18,21 @@
 #include "components/viz/common/viz_common_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/sync_token.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
+
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef unsigned int     GLuint;
+
+#ifndef GL_LINEAR
+#define GL_LINEAR 0x2601
+#endif
+
+#ifndef GL_TEXTURE_2D
+#define GL_TEXTURE_2D 0x0DE1
+#endif
 
 namespace gfx {
 class GpuMemoryBuffer;

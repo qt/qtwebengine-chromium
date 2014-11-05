@@ -5,6 +5,7 @@
 #include "cc/resources/scoped_resource.h"
 
 #include "cc/resources/layer_tree_resource_provider.h"
+#include "third_party/khronos/GLES2/gl2.h"
 
 namespace cc {
 

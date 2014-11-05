@@ -43,6 +43,9 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
+
 #if BUILDFLAG(ENABLE_VULKAN)
 #include "components/viz/common/gpu/vulkan_in_process_context_provider.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
