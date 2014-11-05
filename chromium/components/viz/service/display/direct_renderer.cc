@@ -35,6 +35,11 @@
 #include "ui/gfx/transform.h"
 #include "ui/gfx/transform_util.h"
 
+// From GL/gl.h
+#ifndef GL_TEXTURE_2D
+#define GL_TEXTURE_2D 0x0DE1
+#endif
+
 namespace {
 
 // Returns the bounding box that contains the specified rounded corner.
