@@ -31,6 +31,7 @@ class GL_EXPORT GLFenceEGL : public GLFence {
   static void CheckEGLFenceBeforeWait();
 
   // GLFence implementation:
+  TransferableFence Transfer() override;
   bool HasCompleted() override;
   void ClientWait() override;
   void ServerWait() override;

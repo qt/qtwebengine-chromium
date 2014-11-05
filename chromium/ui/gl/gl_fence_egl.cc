@@ -49,6 +49,15 @@ bool GLFenceEGL::InitializeInternal(EGLenum type, EGLint* attribs) {
   return sync_ != EGL_NO_SYNC_KHR;
 }
 
+TransferableFence GLFenceEGL::Transfer() {
+  TransferableFence ret;
+  ret.type = TransferableFence::EglSync;
+  ret.egl.display = display_;
+  ret.egl.sync = sync_;
+  sync_ = EGL_NO_SYNC_KHR;
+  return ret;
+}
+
 bool GLFenceEGL::HasCompleted() {
   EGLint value = 0;
   if (eglGetSyncAttribKHR(display_, sync_, EGL_SYNC_STATUS_KHR, &value) !=
@@ -107,7 +116,8 @@ void GLFenceEGL::Invalidate() {
 }
 
 GLFenceEGL::~GLFenceEGL() {
-  eglDestroySyncKHR(display_, sync_);
+  if (sync_ != EGL_NO_SYNC_KHR)
+    eglDestroySyncKHR(display_, sync_);
 }
 
 }  // namespace gl
