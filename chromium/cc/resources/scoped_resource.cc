@@ -4,6 +4,8 @@
 
 #include "cc/resources/scoped_resource.h"
 
+#include "third_party/khronos/GLES2/gl2.h"
+
 namespace cc {
 
 ScopedResource::ScopedResource(ResourceProvider* resource_provider)
