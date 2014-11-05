@@ -33,6 +33,10 @@ void GLFenceNV::ResetState() {
   glFlush();
 }
 
+TransferableFence GLFenceNV::Transfer() {
+  return TransferableFence();
+}
+
 bool GLFenceNV::HasCompleted() {
   DCHECK(glIsFenceNV(fence_));
   return !!glTestFenceNV(fence_);
