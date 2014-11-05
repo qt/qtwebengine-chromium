@@ -15,6 +15,10 @@ GLFenceAPPLE::GLFenceAPPLE() {
   glFlush();
 }
 
+TransferableFence GLFenceAPPLE::Transfer() {
+  return gfx::TransferableFence();
+}
+
 bool GLFenceAPPLE::HasCompleted() {
   DCHECK(glIsFenceAPPLE(fence_));
   return !!glTestFenceAPPLE(fence_);
