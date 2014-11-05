@@ -663,7 +663,7 @@ int ContentMainRunnerImpl::Initialize(const ContentMainParams& params) {
   sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   autorelease_pool_ = params.autorelease_pool;
 #endif  // defined(OS_MACOSX)
 
@@ -913,7 +913,7 @@ int ContentMainRunnerImpl::Run(bool start_service_manager_only) {
   main_params.created_main_parts_closure = created_main_parts_closure_;
 #if defined(OS_WIN)
   main_params.sandbox_info = &sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   main_params.autorelease_pool = autorelease_pool_;
 #endif
 
