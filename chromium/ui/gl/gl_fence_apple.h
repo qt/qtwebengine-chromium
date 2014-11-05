@@ -21,6 +21,7 @@ class GL_EXPORT GLFenceAPPLE : public GLFence {
   ~GLFenceAPPLE() override;
 
   // GLFence implementation:
+  TransferableFence Transfer() override;
   bool HasCompleted() override;
   void ClientWait() override;
   void ServerWait() override;
