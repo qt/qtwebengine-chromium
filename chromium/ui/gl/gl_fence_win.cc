@@ -172,4 +172,8 @@ std::unique_ptr<gfx::GpuFence> GLFenceWin::GetGpuFence() {
   return std::make_unique<gfx::GpuFence>(gpu_fence_handle_.Clone());
 }
 
+TransferableFence GLFenceWin::Transfer() {
+  return TransferableFence();
+}
+
 }  // namespace gl
