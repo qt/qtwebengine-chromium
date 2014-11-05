@@ -29,6 +29,16 @@ GLFenceARB::GLFenceARB() {
   glFlush();
 }
 
+TransferableFence GLFenceARB::Transfer() {
+  gfx::TransferableFence ret;
+  if (sync_) {
+    ret.type = gfx::TransferableFence::ArbSync;
+    ret.arb.sync = sync_;
+    sync_ = 0;
+  }
+  return ret;
+}
+
 bool GLFenceARB::HasCompleted() {
   // Handle the case where FenceSync failed.
   if (!sync_)
@@ -61,8 +71,9 @@ void GLFenceARB::ServerWait() {
 }
 
 GLFenceARB::~GLFenceARB() {
-  DCHECK_EQ(GL_TRUE, glIsSync(sync_));
-  glDeleteSync(sync_);
+  DCHECK_EQ(GL_TRUE, !sync_ || glIsSync(sync_));
+  if (sync_)
+    glDeleteSync(sync_);
 }
 
 }  // namespace gfx

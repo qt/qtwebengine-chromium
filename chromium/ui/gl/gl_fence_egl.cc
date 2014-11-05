@@ -27,6 +27,15 @@ GLFenceEGL::GLFenceEGL() {
   glFlush();
 }
 
+TransferableFence GLFenceEGL::Transfer() {
+  gfx::TransferableFence ret;
+  ret.type = gfx::TransferableFence::EglSync;
+  ret.egl.display = display_;
+  ret.egl.sync = sync_;
+  sync_ = EGL_NO_SYNC_KHR;
+  return ret;
+}
+
 bool GLFenceEGL::HasCompleted() {
   EGLint value = 0;
   if (eglGetSyncAttribKHR(display_, sync_, EGL_SYNC_STATUS_KHR, &value) !=
@@ -66,7 +75,8 @@ void GLFenceEGL::ServerWait() {
 }
 
 GLFenceEGL::~GLFenceEGL() {
-  eglDestroySyncKHR(display_, sync_);
+  if (sync_ != EGL_NO_SYNC_KHR)
+    eglDestroySyncKHR(display_, sync_);
 }
 
 }  // namespace gfx
