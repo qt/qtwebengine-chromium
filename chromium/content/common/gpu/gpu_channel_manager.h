@@ -28,6 +28,7 @@ class WaitableEvent;
 }
 
 namespace gfx {
+class GLFence;
 class GLShareGroup;
 struct GpuMemoryBufferHandle;
 }
@@ -99,6 +100,9 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   gpu::SyncPointManager* sync_point_manager() {
     return sync_point_manager_.get();
   }
+
+  typedef base::hash_map<uint32, gfx::GLFence*> SyncPointGLFences;
+  SyncPointGLFences sync_point_gl_fences_;
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
 
