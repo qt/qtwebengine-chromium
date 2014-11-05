@@ -18,6 +18,8 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gl/trace_util.h"
 
+#include <GL/gl.h>
+
 namespace viz {
 
 namespace {

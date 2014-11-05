@@ -58,7 +58,7 @@ class VIZ_SERVICE_EXPORT DisplayResourceProviderGL
     const ResourceId resource_id_;
 
     GLuint texture_id_ = 0;
-    GLenum target_ = GL_TEXTURE_2D;
+    GLenum target_;
     gfx::Size size_;
     gfx::ColorSpace color_space_;
     absl::optional<gfx::HDRMetadata> hdr_metadata_;

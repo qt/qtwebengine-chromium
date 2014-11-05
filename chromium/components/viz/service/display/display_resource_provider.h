@@ -27,13 +27,16 @@
 #include "components/viz/service/display/resource_fence.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/sync_token.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace gfx {
 class ColorSpace;
 }  // namespace gfx
+
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef unsigned int     GLuint;
 
 namespace viz {
 
