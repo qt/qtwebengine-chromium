@@ -31,8 +31,6 @@
 #include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/command_buffer/common/mailbox.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -41,6 +39,9 @@ namespace gles2 {
 class GLES2Interface;
 }
 }
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef int              GLint;
 
 namespace viz {
 class ContextProvider;
