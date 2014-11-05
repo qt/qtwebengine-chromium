@@ -12,6 +12,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "cc/base/util.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/video_layer_impl.h"
 #include "cc/output/compositor_frame.h"

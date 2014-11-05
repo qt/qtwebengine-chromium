@@ -5,6 +5,7 @@
 #include "content/renderer/gpu/mailbox_output_surface.h"
 
 #include "base/logging.h"
+#include "cc/base/util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/gl_frame_data.h"
