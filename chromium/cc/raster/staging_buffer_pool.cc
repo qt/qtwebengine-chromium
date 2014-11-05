@@ -14,6 +14,8 @@
 #include "cc/base/container_util.h"
 #include "cc/resources/scoped_resource.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 
 using base::trace_event::MemoryAllocatorDump;
 using base::trace_event::MemoryAllocatorDumpGuid;
