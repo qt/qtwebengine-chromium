@@ -478,7 +478,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     autorelease_pool_ = params.autorelease_pool;
 #endif  // defined(OS_MACOSX)
 
@@ -699,7 +699,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
     main_params.sandbox_info = &sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     main_params.autorelease_pool = autorelease_pool_;
 #endif
 #if defined(USE_AURA)
@@ -754,7 +754,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   std::unique_ptr<base::AtExitManager> exit_manager_;
 #if defined(OS_WIN)
   sandbox::SandboxInterfaceInfo sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   base::mac::ScopedNSAutoreleasePool* autorelease_pool_ = nullptr;
 #endif
 
