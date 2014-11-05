@@ -32,6 +32,11 @@
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
+// From GL/gl.h
+#ifndef GL_TEXTURE_2D
+#define GL_TEXTURE_2D 0x0DE1
+#endif
+
 namespace {
 
 static gfx::Transform OrthoProjectionMatrix(float left,

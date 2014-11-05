@@ -15,6 +15,8 @@
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
 #include "components/viz/common/resources/single_release_callback.h"
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 
 namespace cc {
 
