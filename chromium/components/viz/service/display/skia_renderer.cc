@@ -61,6 +61,9 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
+
 namespace viz {
 
 namespace {

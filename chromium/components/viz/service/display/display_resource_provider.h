@@ -27,8 +27,6 @@
 #include "components/viz/service/display/resource_fence.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/sync_token.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
@@ -42,6 +40,10 @@ namespace gles2 {
 class GLES2Interface;
 }
 }  // namespace gpu
+
+// A correct fix would be not to use GL types in this interal API file.
+typedef unsigned int     GLenum;
+typedef unsigned int     GLuint;
 
 namespace viz {
 
@@ -147,7 +149,7 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
     const ResourceId resource_id_;
 
     GLuint texture_id_ = 0;
-    GLenum target_ = GL_TEXTURE_2D;
+    GLenum target_;
     gfx::Size size_;
     gfx::ColorSpace color_space_;
 
