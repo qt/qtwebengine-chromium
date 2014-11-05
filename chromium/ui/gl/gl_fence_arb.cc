@@ -34,6 +34,16 @@ GLFenceARB::GLFenceARB(bool flush) {
   }
 }
 
+TransferableFence GLFenceARB::Transfer() {
+  gfx::TransferableFence ret;
+  if (sync_) {
+    ret.type = gfx::TransferableFence::ArbSync;
+    ret.arb.sync = sync_;
+    sync_ = 0;
+  }
+  return ret;
+}
+
 bool GLFenceARB::HasCompleted() {
   // Handle the case where FenceSync failed.
   if (!sync_)

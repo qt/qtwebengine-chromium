@@ -262,6 +262,7 @@ class GpuCommandBufferStub
   // A queue of sync points associated with this stub.
   std::deque<uint32> sync_points_;
   int sync_point_wait_count_;
+  uint32 last_fence_sync_point_;
 
   bool delayed_work_scheduled_;
   uint64 previous_messages_processed_;

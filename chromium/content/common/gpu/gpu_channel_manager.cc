@@ -108,6 +108,7 @@ GpuChannelManager::~GpuChannelManager() {
     default_offscreen_surface_->Destroy();
     default_offscreen_surface_ = NULL;
   }
+  DCHECK(sync_point_gl_fences_.empty());
 }
 
 gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {

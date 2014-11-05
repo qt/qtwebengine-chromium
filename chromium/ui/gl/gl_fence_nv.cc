@@ -30,6 +30,10 @@ GLFenceNV::GLFenceNV(bool flush) {
   }
 }
 
+TransferableFence GLFenceNV::Transfer() {
+  return gfx::TransferableFence();
+}
+
 bool GLFenceNV::HasCompleted() {
   DCHECK(glIsFenceNV(fence_));
   return !!glTestFenceNV(fence_);
