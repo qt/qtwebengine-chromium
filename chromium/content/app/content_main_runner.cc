@@ -515,11 +515,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif  // !OS_ANDROID
 
 #if defined(OS_MACOSX)
+#if !defined(TOOLKIT_QT)
     // We need this pool for all the objects created before we get to the
     // event loop, but we don't want to leave them hanging around until the
     // app quits. Each "main" needs to flush this pool right before it goes into
     // its main event loop to get rid of the cruft.
     autorelease_pool_.reset(new base::mac::ScopedNSAutoreleasePool());
+#endif
     InitializeMac();
 #endif
 
@@ -780,7 +782,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
     main_params.sandbox_info = &sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     main_params.autorelease_pool = autorelease_pool_.get();
 #endif
 
@@ -806,7 +808,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif  // _CRTDBG_MAP_ALLOC
 #endif  // OS_WIN
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     autorelease_pool_.reset(NULL);
 #endif
 
@@ -835,7 +837,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   std::unique_ptr<base::AtExitManager> exit_manager_;
 #if defined(OS_WIN)
   sandbox::SandboxInterfaceInfo sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   std::unique_ptr<base::mac::ScopedNSAutoreleasePool> autorelease_pool_;
 #endif
 
