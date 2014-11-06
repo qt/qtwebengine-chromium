@@ -852,19 +852,22 @@ void GpuCommandBufferStub::OnRetireSyncPoint(uint32 sync_point) {
   GpuChannelManager* manager = channel_->gpu_channel_manager();
 
 #if defined(TOOLKIT_QT)
-  // Only keep the last fence alive to keep its temporary ownership in GpuCommandBufferStub
-  // simple in case where Qt would not pick this fence to eventually destroy it.
-  DestroyGLFence(manager->sync_point_gl_fences_, last_fence_sync_point_);
-  // We submitted all resource-producing GL commands, convert the logical sync point into a GL fence
-  // to allow Qt's GL context to wait for the results of commands submitted in this context using the
-  // sync point as reference.
-  scoped_ptr<gfx::GLFence> fence = scoped_ptr<gfx::GLFence>(gfx::GLFence::CreateWithoutFlush());
-  if (fence)
-    manager->sync_point_gl_fences_.insert(std::make_pair(sync_point, fence.release()));
-  // Flush regardless of the success of the fence creation to at least make sure that commands
-  // producing our textures are in the pipe before the scene graph inserts its own on the other thread.
-  glFlush();
-  last_fence_sync_point_ = sync_point;
+  bool has_current_context = !!gfx::GLContext::GetCurrent();
+  if (has_current_context) {
+    // Only keep the last fence alive to keep its temporary ownership in GpuCommandBufferStub
+    // simple in case where Qt would not pick this fence to eventually destroy it.
+    DestroyGLFence(manager->sync_point_gl_fences_, last_fence_sync_point_);
+    // We submitted all resource-producing GL commands, convert the logical sync point into a GL fence
+    // to allow Qt's GL context to wait for the results of commands submitted in this context using the
+    // sync point as reference.
+    scoped_ptr<gfx::GLFence> fence = scoped_ptr<gfx::GLFence>(gfx::GLFence::CreateWithoutFlush());
+    if (fence)
+      manager->sync_point_gl_fences_.insert(std::make_pair(sync_point, fence.release()));
+    // Flush regardless of the success of the fence creation to at least make sure that commands
+    // producing our textures are in the pipe before the scene graph inserts its own on the other thread.
+    glFlush();
+    last_fence_sync_point_ = sync_point;
+  }
 #endif
 
   manager->sync_point_manager()->RetireSyncPoint(sync_point);
