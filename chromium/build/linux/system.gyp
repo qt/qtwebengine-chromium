@@ -601,6 +601,8 @@
         {
           'target_name': 'libpci',
           'type': 'static_library',
+          'conditions': [
+          ['use_x11==1', {
           'cflags': [
             '<!@(<(pkg-config) --cflags libpci)',
           ],
@@ -655,6 +657,8 @@
               'message': 'Generating libpci library loader',
               'process_outputs_as_sources': 1,
             },
+          ],
+          }],
           ],
         },
       ],
