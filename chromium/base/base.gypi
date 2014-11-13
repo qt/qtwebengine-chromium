@@ -820,6 +820,18 @@
                 ['exclude', '^nix/'],
               ],
           }],
+          # We need to include xdg for embedded linux,
+          # but we indeed do not want atomicops for x86.
+          ['qt_os == "embedded_linux"', {
+              'sources/': [
+                ['include', '^nix/'],
+              ],
+          }],
+          ['use_qt==1 and target_arch=="ia32"', {
+              'sources/': [
+                ['include', 'atomicops_internals_x86_gcc.cc'],
+              ],
+          }],
           ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
               'sources!': [
                 'message_loop/message_pump_glib.cc',
