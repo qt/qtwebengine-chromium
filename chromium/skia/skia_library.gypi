@@ -230,7 +230,7 @@
         '../third_party/skia/src/opts/opts_check_x86.cpp'
       ],
     }],
-    [ 'desktop_linux == 1 or chromeos == 1', {
+    [ 'desktop_linux == 1 or chromeos == 1 or qt_os=="embedded_linux"', {
       'dependencies': [
         '../build/linux/system.gyp:fontconfig',
         '../build/linux/system.gyp:freetype2',

@@ -322,7 +322,7 @@
               '../build/linux/system.gyp:gio',
             ],
         }],
-        [ 'desktop_linux == 1 or chromeos == 1', {
+        [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
             'conditions': [
               ['os_bsd==1', {
                 'sources!': [
