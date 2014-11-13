@@ -222,7 +222,7 @@
         }],
         [ 'use_nss_certs == 1', {
           'conditions': [
-            [ 'desktop_linux == 1 or chromeos == 1', {
+            [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
               'dependencies': [
                 '../build/linux/system.gyp:nss',
               ],
@@ -664,7 +664,7 @@
         }],
         ['use_nss_certs == 1', {
           'conditions': [
-            [ 'desktop_linux == 1 or chromeos == 1', {
+            [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
               'dependencies': [
                 '../build/linux/system.gyp:nss',
               ],
