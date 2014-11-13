@@ -165,7 +165,7 @@
         '../build/android/ndk.gyp:cpu_features',
       ],
     }],
-    [ 'desktop_linux == 1 or chromeos == 1', {
+    [ 'desktop_linux == 1 or chromeos == 1 or qt_os=="embedded_linux"', {
       'dependencies': [
         '../build/linux/system.gyp:fontconfig',
         '../build/linux/system.gyp:freetype2',
