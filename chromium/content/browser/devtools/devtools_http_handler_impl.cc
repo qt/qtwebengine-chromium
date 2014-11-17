@@ -779,6 +779,7 @@ void DevToolsHttpHandlerImpl::OnCloseUI(int connection_id) {
 void DevToolsHttpHandlerImpl::OnHttpServerInitialized(
     const net::IPEndPoint& ip_address) {
   server_ip_address_.reset(new net::IPEndPoint(ip_address));
+  delegate_->Initialized(ip_address);
 }
 
 DevToolsHttpHandlerImpl::DevToolsHttpHandlerImpl(
