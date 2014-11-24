@@ -1,4 +1,0 @@
-*.sln           eol=crlf
-*.vcproj        eol=crlf
-*.vsprops       eol=crlf
-*.vcxproj       eol=crlf
