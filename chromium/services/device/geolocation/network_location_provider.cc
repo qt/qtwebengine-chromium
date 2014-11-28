@@ -199,6 +199,16 @@ void NetworkLocationProvider::StartProvider(bool high_accuracy) {
   }
   start_time_ = base::TimeTicks::Now();
 
+  // No point in sending requests without an API key.
+  if (request_->api_key().empty()) {
+      device::mojom::GeopositionResultPtr result =
+          device::mojom::GeopositionResult::NewError(
+              mojom::GeopositionError::New(
+                  mojom::GeopositionErrorCode::kPositionUnavailable, "", ""));
+      location_provider_update_callback_.Run(this, std::move(result));
+      return;
+  }
+
   // Registers a callback with the data provider.
   // Releasing the handle will automatically unregister the callback.
   wifi_data_provider_handle_ =
