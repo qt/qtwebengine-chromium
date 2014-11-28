@@ -130,12 +130,15 @@ void LocationArbitrator::OnLocationUpdate(const LocationProvider* provider,
                                           const Geoposition& new_position) {
   DCHECK(new_position.Validate() ||
          new_position.error_code != Geoposition::ERROR_CODE_NONE);
-  if (!IsNewPositionBetter(position_, new_position,
-                           provider == position_provider_))
-    return;
-  position_provider_ = provider;
-  position_ = new_position;
-  arbitrator_update_callback_.Run(this, position_);
+  providers_polled_.insert(provider);
+  if (IsNewPositionBetter(position_, new_position,
+                          provider == position_provider_)) {
+      position_provider_ = provider;
+      position_ = new_position;
+  }
+  // Don't fail until all providers had their say.
+  if (position_.Validate() || (providers_polled_.size() == providers_.size()))
+      arbitrator_update_callback_.Run(this, position_);
 }
 
 const Geoposition& LocationArbitrator::GetPosition() {
