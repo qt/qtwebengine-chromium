@@ -126,13 +126,15 @@ void LocationArbitrator::OnLocationUpdate(
   DCHECK(new_result->is_error() ||
          new_result->is_position() &&
              ValidateGeoposition(*new_result->get_position()));
-  if (result_ && !IsNewPositionBetter(*result_, *new_result,
+  providers_polled_.insert(provider);
+  if (!result_ || IsNewPositionBetter(*result_, *new_result,
                                       provider == position_provider_)) {
-    return;
+    position_provider_ = provider;
+    result_ = std::move(new_result);
   }
-  position_provider_ = provider;
-  result_ = std::move(new_result);
-  arbitrator_update_callback_.Run(this, result_.Clone());
+  // Don't fail until all providers had their say.
+  if ((result && ValidateGeoposition(result_->get_position())) || (providers_polled_.size() == providers_.size()))
+    arbitrator_update_callback_.Run(this, result_.Clone());
 }
 
 const mojom::GeopositionResult* LocationArbitrator::GetPosition() {

@@ -23,6 +23,8 @@
 #include "services/device/public/mojom/geoposition.mojom.h"
 #include "url/gurl.h"
 
+#include <set>
+
 namespace network {
 class SharedURLLoaderFactory;
 }
@@ -121,6 +123,9 @@ class LocationArbitrator : public LocationProvider {
   // The current best estimate of our position, or `nullptr` if no estimate has
   // been received.
   mojom::GeopositionResultPtr result_;
+
+  // Used to track if all providers had a chance to provide a location.
+  std::set<raw_ptr<const LocationProvider*>> providers_polled_;
 };
 
 // Factory functions for the various types of location provider to abstract
