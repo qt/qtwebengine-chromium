@@ -61,6 +61,7 @@ BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()
 #if !defined(OS_MACOSX) && \
     !defined(OS_WIN) && \
     !defined(OS_ANDROID) \
+    && !defined(TOOLKIT_QT)
 // We have subclassess of BrowserAccessibilityManager on Mac, and Win. For any
 // other platform, instantiate the base class.
 // static
