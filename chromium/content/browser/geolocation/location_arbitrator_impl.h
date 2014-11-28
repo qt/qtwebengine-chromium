@@ -19,6 +19,8 @@
 #include "content/public/common/geoposition.h"
 #include "net/url_request/url_request_context_getter.h"
 
+#include <set>
+
 namespace net {
 class URLRequestContextGetter;
 }
@@ -94,6 +96,9 @@ class CONTENT_EXPORT LocationArbitratorImpl : public LocationArbitrator {
   bool is_permission_granted_;
   // The current best estimate of our position.
   Geoposition position_;
+
+  // Used to track if all providers had a chance to provide a location.
+  std::set<const LocationProvider*> providers_polled_;
 
   // Tracks whether providers should be running.
   bool is_running_;
