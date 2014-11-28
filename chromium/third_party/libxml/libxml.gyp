@@ -251,7 +251,7 @@
               # signed/unsigned comparison warning. The signed/unsigned (4101)
               # is fixed upstream and can be removed eventually.
               # TODO(jschuh): http://crbug.com/167187 size_t -> int
-              'msvs_disabled_warnings': [ 4018, 4101, 4267 ],
+              'msvs_disabled_warnings': [ 4018, 4101, 4267, 4996 ],
             }, {  # else: OS!="win"
               'product_name': 'xml2',
             }],

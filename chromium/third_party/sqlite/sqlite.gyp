@@ -102,7 +102,7 @@
             ],
           },
           'msvs_disabled_warnings': [
-            4018, 4244, 4267,
+            4018, 4244, 4267, 4996,
           ],
           'variables': {
             'clang_warning_flags': [
