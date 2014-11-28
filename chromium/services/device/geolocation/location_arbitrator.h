@@ -23,6 +23,8 @@
 #include "services/device/public/mojom/geoposition.mojom.h"
 #include "url/gurl.h"
 
+#include <set>
+
 namespace network {
 class SharedURLLoaderFactory;
 }
@@ -122,6 +124,10 @@ class LocationArbitrator : public LocationProvider {
   mojom::GeopositionResultPtr result_;
   // To be called when a provider's internal diagnostics have changed.
   base::RepeatingClosure internals_updated_closure_;
+
+  // Used to track if all providers had a chance to provide a location.
+  std::set<raw_ptr<const LocationProvider>> providers_polled_;
+
   // Callbacks to be called by NetworkLocationProvider when network requests are
   // sent and received.
   NetworkLocationProvider::NetworkRequestCallback network_request_callback_;
