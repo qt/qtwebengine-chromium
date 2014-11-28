@@ -30,6 +30,6 @@ declare_args() {
 # BrowserAccessibilityManager. But unlike Windows, Mac and Linux it does not use
 # AXPlatformNode to implement a native C++ API, instead it bridges to a Java API.
 has_platform_accessibility_support =
-    has_native_accessibility || is_android || is_fuchsia
+    has_native_accessibility || is_android || is_fuchsia || use_qt
 
 enable_hidpi = !is_android
