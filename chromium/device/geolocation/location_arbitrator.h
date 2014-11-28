@@ -22,6 +22,8 @@
 #include "services/device/public/mojom/geoposition.mojom.h"
 #include "url/gurl.h"
 
+#include <set>
+
 namespace net {
 class URLRequestContextGetter;
 }
@@ -120,6 +122,9 @@ class DEVICE_GEOLOCATION_EXPORT LocationArbitrator
   bool is_permission_granted_;
   // The current best estimate of our position.
   mojom::Geoposition position_;
+
+  // Used to track if all providers had a chance to provide a location.
+  std::set<const LocationProvider*> providers_polled_;
 
   // The most recent position estimate returned by the network location
   // provider. This must be preserved by LocationArbitrator so it is not lost
