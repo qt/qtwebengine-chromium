@@ -151,7 +151,7 @@
             '../icu/icu.gyp:icuuc',
           ],
           'msvs_disabled_warnings': [
-            4244, 4267,
+            4244, 4267, 4996,
           ],
           'conditions': [
             ['OS == "win" and component == "shared_library"', {
