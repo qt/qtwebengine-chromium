@@ -22,6 +22,8 @@
 #include "services/device/public/mojom/geoposition.mojom.h"
 #include "url/gurl.h"
 
+#include <set>
+
 namespace network {
 class SharedURLLoaderFactory;
 }
@@ -106,6 +108,9 @@ class LocationArbitrator : public LocationProvider {
   bool is_permission_granted_;
   // The current best estimate of our position.
   mojom::Geoposition position_;
+
+  // Used to track if all providers had a chance to provide a location.
+  std::set<const LocationProvider*> providers_polled_;
 
   std::unique_ptr<PositionCache> position_cache_;
 
