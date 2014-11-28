@@ -127,12 +127,15 @@ void LocationArbitrator::OnLocationUpdate(
     const mojom::Geoposition& new_position) {
   DCHECK(ValidateGeoposition(new_position) ||
          new_position.error_code != mojom::Geoposition::ErrorCode::NONE);
-  if (!IsNewPositionBetter(position_, new_position,
-                           provider == position_provider_))
-    return;
-  position_provider_ = provider;
-  position_ = new_position;
-  arbitrator_update_callback_.Run(this, position_);
+  providers_polled_.insert(provider);
+  if (IsNewPositionBetter(position_, new_position,
+                          provider == position_provider_)) {
+    position_provider_ = provider;
+    position_ = new_position;
+  }
+  // Don't fail until all providers had their say.
+  if (ValidateGeoposition(position_) || (providers_polled_.size() == providers_.size()))
+    arbitrator_update_callback_.Run(this, position_);
 }
 
 const mojom::Geoposition& LocationArbitrator::GetPosition() {
