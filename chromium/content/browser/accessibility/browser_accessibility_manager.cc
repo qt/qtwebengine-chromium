@@ -90,6 +90,7 @@ BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()
 #if !defined(OS_WIN) && \
     !defined(OS_MACOSX) && \
     !defined(OS_ANDROID) && \
+    !defined(TOOLKIT_QT) && \
     !(defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_X11))
 // We have subclassess of BrowserAccessibility on some platforms.
 // For other platforms, instantiate the base class.
