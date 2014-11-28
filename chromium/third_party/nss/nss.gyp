@@ -245,7 +245,7 @@
             ],
           },
           # TODO(wtc): suppress C4244 and C4554 in prdtoa.c.
-          'msvs_disabled_warnings': [4018, 4244, 4554, 4267,],
+          'msvs_disabled_warnings': [4018, 4244, 4554, 4267, 4996, ],
           'variables': {
             'clang_warning_flags': [
               # nspr passes "const char*" through "void*".
