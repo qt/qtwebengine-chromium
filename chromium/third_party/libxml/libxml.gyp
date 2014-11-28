@@ -264,7 +264,7 @@
               # TODO(jschuh): http://crbug.com/167187 size_t -> int
               # TODO(brucedawson): http://crbug.com/554200 fix C4311 warnings
               # C4311 is a VS 2015 64-bit warning for pointer truncation
-              'msvs_disabled_warnings': [ 4018, 4267, 4311, ],
+              'msvs_disabled_warnings': [ 4018, 4267, 4311, 4996 ],
             }, {  # else: OS!="win"
               'product_name': 'xml2',
             }],
