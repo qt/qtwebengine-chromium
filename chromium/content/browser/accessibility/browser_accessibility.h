@@ -30,19 +30,19 @@
 // BrowserAccessibilityManager.
 #undef PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL
 
-#if defined(OS_WIN)
+#if defined(TOOLKIT_QT)
 #define PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL 1
-#endif
 
-#if defined(OS_MACOSX)
+#elif defined(OS_WIN)
 #define PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL 1
-#endif
 
-#if defined(OS_ANDROID) && !defined(USE_AURA)
+#elif defined(OS_MACOSX)
 #define PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL 1
-#endif
 
-#if defined(OS_LINUX) && defined(USE_X11) && !defined(OS_CHROMEOS)
+#elif defined(OS_ANDROID) && !defined(USE_AURA)
+#define PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL 1
+
+#elif defined(OS_LINUX) && defined(USE_X11) && !defined(OS_CHROMEOS)
 #define PLATFORM_HAS_NATIVE_ACCESSIBILITY_IMPL 1
 #endif
 
