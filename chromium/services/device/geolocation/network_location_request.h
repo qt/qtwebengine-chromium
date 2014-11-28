@@ -96,6 +96,7 @@ class NetworkLocationRequest {
       NetworkLocationRequestSource network_location_request_source);
 
   bool is_request_pending() const { return bool(url_loader_); }
+  const std::string api_key() const { return api_key_; }
 
   std::vector<mojom::AccessPointDataPtr> GetRequestDataForDiagnostics() const;
 
