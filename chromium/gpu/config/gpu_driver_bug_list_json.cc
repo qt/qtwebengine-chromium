@@ -1110,6 +1110,17 @@ LONG_STRING_CONST(
       "features": [
         "disable_d3d11"
       ]
+    },
+    {
+      "id": 88,
+      "description": "Do not use fence sync with Vivante GPUs since it is causing crashes",
+      "gl_extensions": {
+        "op": "contains",
+        "value": "GL_VIV_shader_binary"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
     }
   ]
 }
